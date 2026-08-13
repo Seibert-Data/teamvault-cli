@@ -120,7 +120,9 @@ func (sf *SharedFlags) buildWriter(ctx context.Context) (teamvault.Writer, error
 
 // isTTYStdin returns true if os.Stdin is connected to an interactive terminal.
 func isTTYStdin() bool {
-	return term.IsTerminal(int(os.Stdin.Fd())) // #nosec G115
+	// #nosec G115 -- Fd() returns a small file descriptor (0 for stdin); the
+	// uintptr-to-int conversion cannot overflow on any supported platform.
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 // readPasswordFromStdin reads a password from stdin to EOF. It rejects empty

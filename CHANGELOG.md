@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- fix: justify the #nosec G115 directive in isTTYStdin
+- fix: correct "form" typo in the api-url parse error message
+
 ## v5.10.0
 
 - test(e2e): add scenario 009 covering `htpasswd` end-to-end against fakevault (seeded fixture + a freshly created secret)

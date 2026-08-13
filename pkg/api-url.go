@@ -21,7 +21,7 @@ func (a ApiUrl) String() string {
 func (a ApiUrl) Key() (Key, error) {
 	parts := strings.Split(a.String(), "/")
 	if len(parts) < 3 {
-		return "", fmt.Errorf("parse key form api-url failed")
+		return "", fmt.Errorf("parse key from api-url failed")
 	}
 	return Key(parts[len(parts)-2]), nil
 }
