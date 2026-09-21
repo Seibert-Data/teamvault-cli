@@ -59,7 +59,18 @@ lint:
 vet:
 	go vet -mod=mod $(shell go list -mod=mod ./... | grep -v /vendor/)
 
-VULNCHECK_IGNORE ?= GO-2026-4923 GO-2026-4514 GO-2022-0470 GO-2026-4772 GO-2026-4771 GO-2026-5932
+# Advisories excluded from the vulncheck gate. Every entry needs a reason it cannot be
+# cleared by a version bump — a bare suppression silently hides a real finding.
+#
+# GO-2026-5932 (golang.org/x/crypto/openpgp) — no fixed version exists upstream; the
+# package is deprecated rather than patched, so no bump clears it. Verified 2026-09-21
+# against OSV: `fixed: none`.
+#
+# Pruned 2026-09-21 (GO-2026-4923, GO-2026-4514, GO-2022-0470, GO-2026-4771, GO-2026-4772):
+# none correspond to a current finding — GO-2026-4923 is formally WITHDRAWN, the rest became
+# unreachable after dependency bumps. Retaining them would mask a future re-introduction,
+# which is how this gate went a month without failing meaningfully.
+VULNCHECK_IGNORE ?= GO-2026-5932
 
 # Known-benign govulncheck failure modes we swallow. golang.org/x/tools v0.46.0
 # panics on packages containing generic *types.TypeParam during SSA analysis
