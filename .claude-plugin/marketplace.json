@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Fetch TeamVault secrets and set up the teamvault CLI, for humans and AI agents",
-    "version": "5.10.0"
+    "version": "5.10.1"
   },
   "plugins": [
     {
       "name": "teamvault-cli",
       "description": "Fetch TeamVault secrets (password, username, url, file) and set up the teamvault CLI, for humans and AI agents",
       "source": "./",
-      "version": "5.10.0",
+      "version": "5.10.1",
       "strict": true
     }
   ]
