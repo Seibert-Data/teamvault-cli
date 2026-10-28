@@ -1,7 +1,7 @@
 {
   "name": "teamvault-cli",
   "description": "Fetch TeamVault secrets (password, username, url, file) and set up the teamvault CLI, for humans and AI agents",
-  "version": "5.10.2",
+  "version": "5.10.3",
   "author": {
     "name": "Benjamin Borbe"
   },

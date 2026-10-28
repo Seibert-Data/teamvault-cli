@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v5.10.3
 
 - fix(cli): `create --file` and `update --file` now send `filename` as a **top-level** field (the `filepath.Base` of the `--file` path) instead of omitting it. TeamVault ≥ 0.14.0 requires a top-level `filename` for file secrets and rejected every file create with `HTTP 400 {"filename": ["This field is required."]}`. `secret_data` still carries only `file_content`, and password-secret request bodies are byte-identical to before (no `filename` key).
 - fix(cli): a non-2xx response now includes the server's response body in the error, so a validation failure names its `field` and `message` instead of only `failed with status: 400`. Only the response is read, never the request, so no secret value can reach the message.
