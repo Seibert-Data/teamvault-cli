@@ -37,6 +37,10 @@ type CreateSecret struct {
 	// FileContent is the raw file bytes, base64-encoded into secret_data when
 	// ContentType == ContentTypeFile.
 	FileContent []byte
+	// Filename is the file name stored alongside FileContent. It is sent as the
+	// top-level `filename` field, never inside secret_data, and TeamVault
+	// rejects a file secret without it.
+	Filename string
 }
 
 // UpdateSecret describes a partial update. Only non-nil pointer fields are
@@ -56,6 +60,9 @@ type UpdateSecret struct {
 	Password *Password
 	// FileContent is the new file content; non-nil creates a new revision.
 	FileContent []byte
+	// Filename is the new file name, sent as the top-level `filename` field.
+	// Omitted from the request when empty.
+	Filename string
 }
 
 //counterfeiter:generate -o mocks/writer.go --fake-name Writer . Writer

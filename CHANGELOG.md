@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- fix(cli): `create --file` and `update --file` now send `filename` as a **top-level** field (the `filepath.Base` of the `--file` path) instead of omitting it. TeamVault ≥ 0.14.0 requires a top-level `filename` for file secrets and rejected every file create with `HTTP 400 {"filename": ["This field is required."]}`. `secret_data` still carries only `file_content`, and password-secret request bodies are byte-identical to before (no `filename` key).
+- fix(cli): a non-2xx response now includes the server's response body in the error, so a validation failure names its `field` and `message` instead of only `failed with status: 400`. Only the response is read, never the request, so no secret value can reach the message.
+
 ## v5.10.2
 
 - fix(security): clear the `govulncheck` advisories that red-lit `master` on 2026-10-28 — bump the Go toolchain 1.26.8 → 1.26.10 (clears the `stdlib` batch `GO-2026-6599` … `GO-2026-6809`) and `golang.org/x/net` v0.58.0 → v0.62.0 (clears `GO-2026-6603`, `GO-2026-6610`, `GO-2026-6611`, `GO-2026-6860`, `GO-2026-6866`), which pulls `x/crypto` v0.58.0, `x/sys` v0.49.0, `x/term` v0.47.0, `x/text` v0.43.0, `x/tools` v0.51.0 and `x/sync` v0.24.0 with it. `VULNCHECK_IGNORE` is unchanged at `GO-2026-5932`, the only genuinely unfixable advisory.

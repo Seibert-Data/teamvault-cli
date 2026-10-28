@@ -10,12 +10,18 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/bborbe/errors"
 	"github.com/bborbe/time"
 	"github.com/golang/glog"
 )
+
+// maxErrorDetailBytes bounds how much of a non-2xx response body is folded into
+// the returned error, so a misbehaving proxy cannot balloon the message.
+const maxErrorDetailBytes = 4096
 
 // NewRemoteWriter creates a Writer that issues POST/PATCH calls to a remote
 // TeamVault instance, reusing HTTP Basic auth identical to the read path.
@@ -56,6 +62,11 @@ func (w *remoteWriter) Create(ctx context.Context, secret CreateSecret) (Key, Ap
 		"content_type": string(secret.ContentType),
 		"name":         secret.Name,
 		"secret_data":  secretData,
+	}
+	// filename is a field on the Secret itself, not on secret_data, and
+	// TeamVault rejects a file secret without it.
+	if secret.ContentType == ContentTypeFile && secret.Filename != "" {
+		body["filename"] = secret.Filename
 	}
 	if secret.Username != "" {
 		body["username"] = secret.Username
@@ -113,6 +124,9 @@ func (w *remoteWriter) Update(
 	}
 	if hasValue {
 		body["secret_data"] = secretData
+	}
+	if secret.Filename != "" {
+		body["filename"] = secret.Filename
 	}
 
 	var response struct {
@@ -178,6 +192,17 @@ func (w *remoteWriter) call(ctx context.Context, method, url string, body any, r
 				resp.StatusCode,
 			)
 		}
+		// The server's validation body names the offending field and message;
+		// without it a 400 is opaque.
+		if detail := readErrorDetail(resp); detail != "" {
+			return errors.Errorf(
+				ctx,
+				"request to %s failed with status: %d: %s",
+				url,
+				resp.StatusCode,
+				detail,
+			)
+		}
 		return errors.Errorf(ctx, "request to %s failed with status: %d", url, resp.StatusCode)
 	}
 
@@ -187,6 +212,32 @@ func (w *remoteWriter) call(ctx context.Context, method, url string, body any, r
 		}
 	}
 	return nil
+}
+
+// readErrorDetail returns the response body of a failed call, capped at
+// maxErrorDetailBytes and marked when cut so a shortened validation message is
+// never mistaken for the whole one. Only the response is read, never the
+// request, so no secret value can reach the error as long as the server (DRF
+// validation errors) does not echo the submitted body back — the size cap
+// bounds the damage if it ever did.
+func readErrorDetail(resp *http.Response) string {
+	detail, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorDetailBytes+1))
+	if err != nil {
+		return ""
+	}
+	truncated := len(detail) > maxErrorDetailBytes
+	if truncated {
+		detail = detail[:maxErrorDetailBytes]
+	}
+	detail = bytes.TrimSpace(detail)
+	if len(detail) == 0 {
+		return ""
+	}
+	message := strings.ToValidUTF8(string(detail), "")
+	if truncated {
+		message += "…(truncated)"
+	}
+	return message
 }
 
 func (w *remoteWriter) createHeader() http.Header {

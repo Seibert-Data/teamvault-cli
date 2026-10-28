@@ -7,6 +7,7 @@ package cli
 import (
 	"context"
 	"os"
+	"path/filepath"
 
 	"github.com/bborbe/errors"
 	"github.com/spf13/cobra"
@@ -69,6 +70,9 @@ func createUpdateCommand(ctx context.Context, sf *SharedFlags) *cobra.Command {
 					return errors.Wrapf(ctx, err, "read file %q failed", filePath)
 				}
 				secret.FileContent = data
+				// The server requires a filename for file secrets; only the base
+				// name is sent so the local directory layout stays local.
+				secret.Filename = filepath.Base(filePath)
 
 			case passwordStdin:
 				pw, err := readPasswordFromStdin(ctx, cmd.InOrStdin())

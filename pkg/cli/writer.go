@@ -26,6 +26,9 @@ var newWriter = func(sf *SharedFlags) func(context.Context) (teamvault.Writer, e
 	return sf.buildWriter
 }
 
+// defaultNewWriter is the un-overridden seam, restored by ResetNewWriterForTest.
+var defaultNewWriter = newWriter
+
 // SetNewWriterForTest overrides the writer constructor for tests.
 // Returns a function to call in AfterEach to reset.
 func SetNewWriterForTest(
@@ -36,8 +39,10 @@ func SetNewWriterForTest(
 	return func() { newWriter = prev }
 }
 
-// ResetNewWriterForTest is an alias for the reset function returned by SetNewWriterForTest.
-func ResetNewWriterForTest() {}
+// ResetNewWriterForTest restores the default writer constructor. A spec that
+// needs the flag-built writer must call this: without it a mock installed by an
+// earlier spec stays in place for the rest of the package run.
+func ResetNewWriterForTest() { newWriter = defaultNewWriter }
 
 // buildWriter creates a TeamVault writer using the shared flags.
 // Credentials resolve through the same precedence as the read path:

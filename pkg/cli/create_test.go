@@ -7,11 +7,14 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/ghttp"
 
 	teamvault "github.com/Seibert-Data/teamvault-cli/v5/pkg"
 	"github.com/Seibert-Data/teamvault-cli/v5/pkg/cli"
@@ -208,6 +211,9 @@ var _ = Describe("create", func() {
 			_, secret := mockWriter.CreateArgsForCall(0)
 			Expect(secret.ContentType).To(Equal(teamvault.ContentTypeFile))
 			Expect(secret.FileContent).To(Equal([]byte("hello world")))
+			// The server requires a filename for file secrets: without this the
+			// create returns 400 and the whole feature is broken again.
+			Expect(secret.Filename).To(Equal(filepath.Base(tmpFile.Name())))
 		})
 	})
 
@@ -329,6 +335,52 @@ var _ = Describe("create", func() {
 			Expect(output).To(ContainSubstring(`"key":"NEWKEY"`))
 			Expect(output).To(ContainSubstring(`"api_url"`))
 			Expect(output).ToNot(ContainSubstring("pw"))
+		})
+	})
+
+	Describe("server validation errors", func() {
+		It("surfaces the server's field and message without leaking the payload", func() {
+			server := ghttp.NewServer()
+			defer server.Close()
+			server.RouteToHandler(
+				http.MethodPost,
+				"/api/secrets/",
+				ghttp.RespondWith(
+					http.StatusBadRequest,
+					`{"filename": ["This field is required."]}`,
+				),
+			)
+
+			dir := GinkgoT().TempDir()
+			filePath := filepath.Join(dir, "key.pem")
+			Expect(
+				os.WriteFile(filePath, []byte("-----BEGIN PRIVATE KEY-----"), 0o600),
+			).To(Succeed())
+
+			cmd := cli.NewRootCommand(ctx)
+			cmd.SetArgs([]string{
+				"create",
+				"--name", "k",
+				"--file", filePath,
+				"--teamvault-url", server.URL(),
+				"--teamvault-user", "u",
+				"--teamvault-pass", "p",
+				// Point at an absent config so the machine's real config file
+				// cannot redirect the request away from the fake server.
+				"--teamvault-config", filepath.Join(dir, "absent.json"),
+			})
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+
+			err := cmd.Execute()
+
+			// Execute() writes a non-nil error to stderr and exits 1, so the
+			// error text is exactly what the operator sees on stderr.
+			Expect(err).NotTo(BeNil())
+			stderr := err.Error()
+			Expect(stderr).To(ContainSubstring("filename"))
+			Expect(stderr).To(ContainSubstring("This field is required."))
+			Expect(stderr).NotTo(MatchRegexp(`file_content|base64|BEGIN .*PRIVATE KEY`))
 		})
 	})
 })

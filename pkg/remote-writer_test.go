@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	libhttp "github.com/bborbe/http"
 	libtime "github.com/bborbe/time"
@@ -81,15 +82,19 @@ var _ = Describe("RemoteWriter", func() {
 				Expect(key).To(Equal(teamvault.Key("AbC123")))
 				Expect(apiUrl).To(Equal(teamvault.ApiUrl(server.URL() + "/api/secrets/AbC123/")))
 
-				Expect(receivedBody["content_type"]).To(Equal("password"))
-				Expect(receivedBody["name"]).To(Equal("my-secret"))
-				Expect(receivedBody["username"]).To(Equal("user@example.com"))
-				Expect(receivedBody["url"]).To(Equal("http://example.com"))
-				Expect(receivedBody["description"]).To(Equal("my description"))
-				secretData := getMap(receivedBody, "secret_data")
-				Expect(secretData["password"]).To(Equal("secret123"))
-				_, hasFile := secretData["file_content"]
-				Expect(hasFile).To(BeFalse())
+				// The whole body is pinned: a password secret must not gain a
+				// top-level filename (TeamVault rejects one on a non-file secret)
+				// and must not change shape in any other way either.
+				Expect(receivedBody).To(Equal(map[string]any{
+					"content_type": "password",
+					"name":         "my-secret",
+					"username":     "user@example.com",
+					"url":          "http://example.com",
+					"description":  "my description",
+					"secret_data": map[string]any{
+						"password": "secret123",
+					},
+				}))
 			})
 		})
 
@@ -118,17 +123,23 @@ var _ = Describe("RemoteWriter", func() {
 					ContentType: teamvault.ContentTypeFile,
 					Name:        "my-file",
 					FileContent: fileContent,
+					Filename:    "key.pem",
 				})
 
 				Expect(err).To(BeNil())
 				Expect(key).To(Equal(teamvault.Key("AbC456")))
 
+				// filename is a field on the Secret, never on secret_data.
+				Expect(receivedBody["filename"]).To(Equal("key.pem"))
 				Expect(receivedBody["content_type"]).To(Equal("file"))
 				Expect(receivedBody["name"]).To(Equal("my-file"))
 				secretData := getMap(receivedBody, "secret_data")
 				Expect(
 					secretData["file_content"],
 				).To(Equal(base64.StdEncoding.EncodeToString(fileContent)))
+				Expect(secretData).To(HaveLen(1))
+				_, filenameInSecretData := secretData["filename"]
+				Expect(filenameInSecretData).To(BeFalse())
 				_, hasPassword := secretData["password"]
 				Expect(hasPassword).To(BeFalse())
 			})
@@ -203,6 +214,8 @@ var _ = Describe("RemoteWriter", func() {
 				Expect(key).To(Equal(teamvault.Key("AbC123")))
 				secretData := getMap(receivedBody, "secret_data")
 				Expect(secretData["password"]).To(Equal("new-secret-pw"))
+				_, hasFilename := receivedBody["filename"]
+				Expect(hasFilename).To(BeFalse())
 			})
 		})
 
@@ -229,14 +242,18 @@ var _ = Describe("RemoteWriter", func() {
 				fileContent := []byte("updated file content")
 				key, _, err := writer.Update(ctx, teamvault.Key("AbC123"), teamvault.UpdateSecret{
 					FileContent: fileContent,
+					Filename:    "new-key.pem",
 				})
 
 				Expect(err).To(BeNil())
 				Expect(key).To(Equal(teamvault.Key("AbC123")))
+				// Same shape as create: filename top-level, never in secret_data.
+				Expect(receivedBody["filename"]).To(Equal("new-key.pem"))
 				secretData := getMap(receivedBody, "secret_data")
 				Expect(
 					secretData["file_content"],
 				).To(Equal(base64.StdEncoding.EncodeToString(fileContent)))
+				Expect(secretData).To(HaveLen(1))
 			})
 		})
 	})
@@ -336,6 +353,50 @@ var _ = Describe("RemoteWriter", func() {
 
 				Expect(err).NotTo(BeNil())
 				Expect(err.Error()).To(ContainSubstring("status: 400"))
+			})
+		})
+
+		Context("400 with a validation body", func() {
+			It("surfaces the server's field and message", func() {
+				server.RouteToHandler(
+					http.MethodPost,
+					"/api/secrets/",
+					ghttp.RespondWith(
+						http.StatusBadRequest,
+						`{"filename": ["This field is required."]}`,
+					),
+				)
+
+				_, _, err := writer.Create(ctx, teamvault.CreateSecret{
+					ContentType: teamvault.ContentTypeFile,
+					Name:        "n",
+					FileContent: []byte("content"),
+				})
+
+				Expect(err).NotTo(BeNil())
+				Expect(err.Error()).To(ContainSubstring("status: 400"))
+				Expect(err.Error()).To(ContainSubstring("filename"))
+				Expect(err.Error()).To(ContainSubstring("This field is required."))
+			})
+		})
+
+		Context("400 with an oversized body", func() {
+			It("marks the detail as truncated instead of cutting it silently", func() {
+				server.RouteToHandler(
+					http.MethodPost,
+					"/api/secrets/",
+					ghttp.RespondWith(http.StatusBadRequest, strings.Repeat("x", 5000)),
+				)
+
+				_, _, err := writer.Create(ctx, teamvault.CreateSecret{
+					ContentType: teamvault.ContentTypePassword,
+					Name:        "n",
+					Password:    teamvault.Password("p"),
+				})
+
+				Expect(err).NotTo(BeNil())
+				Expect(err.Error()).To(ContainSubstring("…(truncated)"))
+				Expect(len(err.Error())).To(BeNumerically("<", 6000))
 			})
 		})
 

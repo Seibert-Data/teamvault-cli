@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -348,6 +349,9 @@ var _ = Describe("update", func() {
 			_, _, secret := mockWriter.UpdateArgsForCall(0)
 			Expect(secret.FileContent).To(Equal([]byte("file-content")))
 			Expect(secret.Password).To(BeNil())
+			// Same shape as create: the server rejects a file update without a
+			// top-level filename.
+			Expect(secret.Filename).To(Equal(filepath.Base(tmpFile.Name())))
 		})
 	})
 
