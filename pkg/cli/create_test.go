@@ -211,6 +211,9 @@ var _ = Describe("create", func() {
 			_, secret := mockWriter.CreateArgsForCall(0)
 			Expect(secret.ContentType).To(Equal(teamvault.ContentTypeFile))
 			Expect(secret.FileContent).To(Equal([]byte("hello world")))
+			// The server requires a filename for file secrets: without this the
+			// create returns 400 and the whole feature is broken again.
+			Expect(secret.Filename).To(Equal(filepath.Base(tmpFile.Name())))
 		})
 	})
 
