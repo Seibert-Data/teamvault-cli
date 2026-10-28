@@ -21,13 +21,23 @@ jobs:
           cache: true
 
       - name: Install Trivy
+        env:
+          # Pinned release: the version is fixed so the scan is reproducible, and
+          # the archive's checksum is verified from the same release. No install
+          # script is executed — the previous step piped one from the moving
+          # `main` branch into `sudo sh`, and the older one used `apt-key`, which
+          # ubuntu-24.04 (the current ubuntu-latest) removed.
+          TRIVY_VERSION: 0.76.1
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
-          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update
-          sudo apt-get install -y trivy
+          set -euo pipefail
+          cd /tmp
+          base="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+          archive="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -sSfL -o "$archive" "${base}/${archive}"
+          curl -sSfL -o checksums.txt "${base}/trivy_${TRIVY_VERSION}_checksums.txt"
+          grep -E "  ${archive}\$" checksums.txt | sha256sum -c -
+          sudo tar -xzf "$archive" -C /usr/local/bin trivy
+          trivy --version
 
       - name: Run precommit checks
         run: make precommit
