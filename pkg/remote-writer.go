@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/bborbe/errors"
 	"github.com/bborbe/time"
@@ -192,20 +193,17 @@ func (w *remoteWriter) call(ctx context.Context, method, url string, body any, r
 			)
 		}
 		// The server's validation body names the offending field and message;
-		// without it a 400 is opaque. Only the response is read, never the
-		// request, so no secret value can reach the error.
-		detail, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorDetailBytes))
-		detail = bytes.TrimSpace(detail)
-		if readErr != nil || len(detail) == 0 {
-			return errors.Errorf(ctx, "request to %s failed with status: %d", url, resp.StatusCode)
+		// without it a 400 is opaque.
+		if detail := readErrorDetail(resp); detail != "" {
+			return errors.Errorf(
+				ctx,
+				"request to %s failed with status: %d: %s",
+				url,
+				resp.StatusCode,
+				detail,
+			)
 		}
-		return errors.Errorf(
-			ctx,
-			"request to %s failed with status: %d: %s",
-			url,
-			resp.StatusCode,
-			detail,
-		)
+		return errors.Errorf(ctx, "request to %s failed with status: %d", url, resp.StatusCode)
 	}
 
 	if response != nil {
@@ -214,6 +212,32 @@ func (w *remoteWriter) call(ctx context.Context, method, url string, body any, r
 		}
 	}
 	return nil
+}
+
+// readErrorDetail returns the response body of a failed call, capped at
+// maxErrorDetailBytes and marked when cut so a shortened validation message is
+// never mistaken for the whole one. Only the response is read, never the
+// request, so no secret value can reach the error as long as the server (DRF
+// validation errors) does not echo the submitted body back — the size cap
+// bounds the damage if it ever did.
+func readErrorDetail(resp *http.Response) string {
+	detail, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorDetailBytes+1))
+	if err != nil {
+		return ""
+	}
+	truncated := len(detail) > maxErrorDetailBytes
+	if truncated {
+		detail = detail[:maxErrorDetailBytes]
+	}
+	detail = bytes.TrimSpace(detail)
+	if len(detail) == 0 {
+		return ""
+	}
+	message := strings.ToValidUTF8(string(detail), "")
+	if truncated {
+		message += "…(truncated)"
+	}
+	return message
 }
 
 func (w *remoteWriter) createHeader() http.Header {

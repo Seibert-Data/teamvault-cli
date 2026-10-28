@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	libhttp "github.com/bborbe/http"
 	libtime "github.com/bborbe/time"
@@ -376,6 +377,26 @@ var _ = Describe("RemoteWriter", func() {
 				Expect(err.Error()).To(ContainSubstring("status: 400"))
 				Expect(err.Error()).To(ContainSubstring("filename"))
 				Expect(err.Error()).To(ContainSubstring("This field is required."))
+			})
+		})
+
+		Context("400 with an oversized body", func() {
+			It("marks the detail as truncated instead of cutting it silently", func() {
+				server.RouteToHandler(
+					http.MethodPost,
+					"/api/secrets/",
+					ghttp.RespondWith(http.StatusBadRequest, strings.Repeat("x", 5000)),
+				)
+
+				_, _, err := writer.Create(ctx, teamvault.CreateSecret{
+					ContentType: teamvault.ContentTypePassword,
+					Name:        "n",
+					Password:    teamvault.Password("p"),
+				})
+
+				Expect(err).NotTo(BeNil())
+				Expect(err.Error()).To(ContainSubstring("…(truncated)"))
+				Expect(len(err.Error())).To(BeNumerically("<", 6000))
 			})
 		})
 
