@@ -362,8 +362,8 @@ var _ = Describe("create", func() {
 				"--teamvault-url", server.URL(),
 				"--teamvault-user", "u",
 				"--teamvault-pass", "p",
-				// Point at an absent config so a real ~/.config file cannot
-				// redirect the request away from the fake server.
+				// Point at an absent config so the machine's real config file
+				// cannot redirect the request away from the fake server.
 				"--teamvault-config", filepath.Join(dir, "absent.json"),
 			})
 			cmd.SetOut(&bytes.Buffer{})
