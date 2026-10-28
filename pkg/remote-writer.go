@@ -10,12 +10,17 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/bborbe/errors"
 	"github.com/bborbe/time"
 	"github.com/golang/glog"
 )
+
+// maxErrorDetailBytes bounds how much of a non-2xx response body is folded into
+// the returned error, so a misbehaving proxy cannot balloon the message.
+const maxErrorDetailBytes = 4096
 
 // NewRemoteWriter creates a Writer that issues POST/PATCH calls to a remote
 // TeamVault instance, reusing HTTP Basic auth identical to the read path.
@@ -56,6 +61,11 @@ func (w *remoteWriter) Create(ctx context.Context, secret CreateSecret) (Key, Ap
 		"content_type": string(secret.ContentType),
 		"name":         secret.Name,
 		"secret_data":  secretData,
+	}
+	// filename is a field on the Secret itself, not on secret_data, and
+	// TeamVault rejects a file secret without it.
+	if secret.ContentType == ContentTypeFile && secret.Filename != "" {
+		body["filename"] = secret.Filename
 	}
 	if secret.Username != "" {
 		body["username"] = secret.Username
@@ -113,6 +123,9 @@ func (w *remoteWriter) Update(
 	}
 	if hasValue {
 		body["secret_data"] = secretData
+	}
+	if secret.Filename != "" {
+		body["filename"] = secret.Filename
 	}
 
 	var response struct {
@@ -178,7 +191,21 @@ func (w *remoteWriter) call(ctx context.Context, method, url string, body any, r
 				resp.StatusCode,
 			)
 		}
-		return errors.Errorf(ctx, "request to %s failed with status: %d", url, resp.StatusCode)
+		// The server's validation body names the offending field and message;
+		// without it a 400 is opaque. Only the response is read, never the
+		// request, so no secret value can reach the error.
+		detail, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorDetailBytes))
+		detail = bytes.TrimSpace(detail)
+		if readErr != nil || len(detail) == 0 {
+			return errors.Errorf(ctx, "request to %s failed with status: %d", url, resp.StatusCode)
+		}
+		return errors.Errorf(
+			ctx,
+			"request to %s failed with status: %d: %s",
+			url,
+			resp.StatusCode,
+			detail,
+		)
 	}
 
 	if response != nil {
