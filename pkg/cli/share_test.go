@@ -83,7 +83,7 @@ var _ = Describe("share", func() {
 				"",
 			)
 			Expect(err).NotTo(BeNil())
-			Expect(err.Error()).To(ContainSubstring("one of user or group is required"))
+			Expect(err.Error()).To(ContainSubstring("only one should be valid"))
 		})
 
 		It("refuses a request with both --user and --group", func() {
@@ -97,7 +97,7 @@ var _ = Describe("share", func() {
 				"",
 			)
 			Expect(err).NotTo(BeNil())
-			Expect(err.Error()).To(ContainSubstring("not both"))
+			Expect(err.Error()).To(ContainSubstring("only one should be valid"))
 		})
 
 		It("refuses a request without --description", func() {
@@ -107,7 +107,7 @@ var _ = Describe("share", func() {
 				"",
 			)
 			Expect(err).NotTo(BeNil())
-			Expect(err.Error()).To(ContainSubstring("grant description is required"))
+			Expect(err.Error()).To(ContainSubstring("grant description"))
 		})
 
 		It("refuses a request with no key at all", func() {
@@ -279,19 +279,20 @@ var _ = Describe("share", func() {
 			userName := "nuke-apply-dev"
 			groupName := "ops"
 			until := "2027-01-01T00:00:00Z"
+			bborbeName := "bborbe"
 			mockSharer := &mocks.Sharer{}
 			mockSharer.SharesReturns([]teamvault.Share{
 				{
 					ID:               1,
 					GrantDescription: "deploy reads",
 					User:             &userName,
-					GrantedBy:        "bborbe",
+					GrantedBy:        &bborbeName,
 				},
 				{
 					ID:               2,
 					GrantDescription: "ops reads",
 					Group:            &groupName,
-					GrantedBy:        "bborbe",
+					GrantedBy:        &bborbeName,
 					GrantedUntil:     &until,
 				},
 			}, nil)
@@ -307,16 +308,28 @@ var _ = Describe("share", func() {
 			Expect(out).To(ContainSubstring("2027-01-01T00:00:00Z"))
 		})
 
-		It("emits JSON with --json", func() {
+		It("emits JSON with --json and never the server's secret field", func() {
 			userName := "nuke-apply-dev"
+			secretName := "AbC123"
+			bborbeName := "bborbe"
 			mockSharer := &mocks.Sharer{}
 			mockSharer.SharesReturns([]teamvault.Share{
-				{ID: 1, GrantDescription: "deploy reads", User: &userName, GrantedBy: "bborbe"},
+				{
+					ID:               1,
+					GrantDescription: "deploy reads",
+					User:             &userName,
+					GrantedBy:        &bborbeName,
+					Secret:           secretName,
+				},
 			}, nil)
 
 			out, err := runWithSharer(mockSharer, []string{"shares", "AbC123", "--json"}, "")
 
 			Expect(err).To(BeNil())
+			// The projection drops the server's `secret` hashid: the caller already
+			// passed the key, and a JSON field named "secret" invites the reader (and
+			// a scanner) to think a secret value is being emitted.
+			Expect(out).NotTo(ContainSubstring(`"secret"`))
 			Expect(out).To(ContainSubstring(`"grant_description":"deploy reads"`))
 			Expect(out).To(ContainSubstring(`"granted_by":"bborbe"`))
 		})

@@ -53,7 +53,7 @@ var _ = Describe("RemoteSharer", func() {
 					GrantDescription: "because",
 				})
 				Expect(err).NotTo(BeNil())
-				Expect(err.Error()).To(ContainSubstring("not both"))
+				Expect(err.Error()).To(ContainSubstring("only one should be valid"))
 				Expect(server.ReceivedRequests()).To(BeEmpty())
 			})
 
@@ -62,7 +62,7 @@ var _ = Describe("RemoteSharer", func() {
 					GrantDescription: "because",
 				})
 				Expect(err).NotTo(BeNil())
-				Expect(err.Error()).To(ContainSubstring("one of user or group is required"))
+				Expect(err.Error()).To(ContainSubstring("only one should be valid"))
 			})
 
 			It("refuses an empty description", func() {
@@ -70,7 +70,7 @@ var _ = Describe("RemoteSharer", func() {
 					User: "alice",
 				})
 				Expect(err).NotTo(BeNil())
-				Expect(err.Error()).To(ContainSubstring("grant description is required"))
+				Expect(err.Error()).To(ContainSubstring("grant description"))
 			})
 
 			It("refuses a granted-until that is not RFC 3339", func() {
@@ -154,7 +154,8 @@ var _ = Describe("RemoteSharer", func() {
 				Expect(err).To(BeNil())
 				Expect(result.Outcome).To(Equal(teamvault.ShareCreated))
 				Expect(result.Share.ID).To(Equal(7))
-				Expect(result.Share.GrantedBy).To(Equal("bborbe"))
+				Expect(result.Share.GrantedBy).NotTo(BeNil())
+				Expect(*result.Share.GrantedBy).To(Equal("bborbe"))
 				Expect(result.Share.User).NotTo(BeNil())
 				Expect(*result.Share.User).To(Equal("nuke-apply-dev"))
 				Expect(result.Share.Group).To(BeNil())
@@ -350,7 +351,8 @@ var _ = Describe("RemoteSharer", func() {
 			Expect(err).To(BeNil())
 			Expect(shares).To(HaveLen(2))
 			Expect(shares[0].GrantDescription).To(Equal("deploy reads"))
-			Expect(shares[0].GrantedBy).To(Equal("bborbe"))
+			Expect(shares[0].GrantedBy).NotTo(BeNil())
+			Expect(*shares[0].GrantedBy).To(Equal("bborbe"))
 			Expect(shares[0].GrantedUntil).To(BeNil())
 			Expect(shares[1].Group).NotTo(BeNil())
 			Expect(*shares[1].Group).To(Equal("ops"))
@@ -408,6 +410,101 @@ var _ = Describe("RemoteSharer", func() {
 			var shareErr *teamvault.ShareError
 			Expect(errors.As(err, &shareErr)).To(BeTrue())
 			Expect(shareErr.StatusCode).To(Equal(http.StatusForbidden))
+		})
+
+		// The pagination guard is copied from remoteConnector.Search, so it needs
+		// the same tests Search has — otherwise a regression in the copy is
+		// invisible until credentials leak.
+
+		It("refuses to follow a next on a different host", func() {
+			server.RouteToHandler(
+				http.MethodGet,
+				"/api/secrets/AbC123/shares/",
+				ghttp.RespondWith(http.StatusOK, `{
+					"count": 2,
+					"next": "https://evil.example.com/api/secrets/AbC123/shares/?page=2",
+					"previous": null,
+					"results": [{"id": 1, "grant_description": "first", "user": "alice", "granted_by": "bborbe"}]
+				}`),
+			)
+
+			_, err := sharer.Shares(ctx, teamvault.Key("AbC123"))
+
+			Expect(err).NotTo(BeNil())
+			Expect(err.Error()).To(ContainSubstring("different host"))
+		})
+
+		It("rejects a next URL that does not parse", func() {
+			server.RouteToHandler(
+				http.MethodGet,
+				"/api/secrets/AbC123/shares/",
+				ghttp.RespondWith(http.StatusOK, `{
+					"count": 2,
+					"next": "://::not-a-url",
+					"previous": null,
+					"results": [{"id": 1, "grant_description": "first", "user": "alice", "granted_by": "bborbe"}]
+				}`),
+			)
+
+			_, err := sharer.Shares(ctx, teamvault.Key("AbC123"))
+
+			Expect(err).NotTo(BeNil())
+			Expect(err.Error()).To(ContainSubstring("parse next url"))
+		})
+
+		It("bounds the loop when the server keeps returning an empty page with a next", func() {
+			// A result-only bound never advances on an empty results array, so the
+			// loop must be bounded by iterations. Without that bound this spec hangs
+			// until the context is cancelled.
+			var calls int
+			server.RouteToHandler(
+				http.MethodGet,
+				"/api/secrets/AbC123/shares/",
+				func(resp http.ResponseWriter, req *http.Request) {
+					calls++
+					resp.WriteHeader(http.StatusOK)
+					//nolint:errcheck
+					fmt.Fprintf(resp, `{
+						"count": 1,
+						"next": "%s/api/secrets/AbC123/shares/?page=%d",
+						"previous": null,
+						"results": []
+					}`, server.URL(), calls+1)
+				},
+			)
+
+			shares, err := sharer.Shares(ctx, teamvault.Key("AbC123"))
+
+			Expect(err).To(BeNil())
+			Expect(shares).To(BeEmpty())
+			// Bounded: the page cap, not an unbounded spin.
+			Expect(calls).To(BeNumerically("<=", 100))
+		})
+
+		It("stops between pages when the context is cancelled", func() {
+			cancelled, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			_, err := sharer.Shares(cancelled, teamvault.Key("AbC123"))
+
+			Expect(err).NotTo(BeNil())
+			Expect(err.Error()).To(ContainSubstring("cancelled"))
+			Expect(server.ReceivedRequests()).To(BeEmpty())
+		})
+
+		It("returns a ShareError for a 5xx", func() {
+			server.RouteToHandler(
+				http.MethodGet,
+				"/api/secrets/AbC123/shares/",
+				ghttp.RespondWith(http.StatusInternalServerError, `{"detail":"boom"}`),
+			)
+
+			_, err := sharer.Shares(ctx, teamvault.Key("AbC123"))
+
+			Expect(err).NotTo(BeNil())
+			var shareErr *teamvault.ShareError
+			Expect(errors.As(err, &shareErr)).To(BeTrue())
+			Expect(shareErr.StatusCode).To(Equal(http.StatusInternalServerError))
 		})
 	})
 })

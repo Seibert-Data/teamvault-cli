@@ -113,7 +113,7 @@ func writeShares(
 			derefOrDash(share.User),
 			derefOrDash(share.Group),
 			share.GrantDescription,
-			share.GrantedBy,
+			derefOrDash(share.GrantedBy),
 			derefOrDash(share.GrantedUntil),
 		); err != nil {
 			return errors.Wrapf(ctx, err, "write shares failed")
@@ -131,9 +131,9 @@ type shareJSON struct {
 	User             *string `json:"user"`
 	Group            *string `json:"group"`
 	GrantDescription string  `json:"grant_description"`
-	GrantedOn        string  `json:"granted_on"`
+	GrantedOn        *string `json:"granted_on"`
 	GrantedUntil     *string `json:"granted_until"`
-	GrantedBy        string  `json:"granted_by"`
+	GrantedBy        *string `json:"granted_by"`
 }
 
 // derefOrDash renders an optional field, using "-" for an absent one so the

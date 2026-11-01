@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bborbe/errors"
+	"github.com/bborbe/validation"
 )
 
 // ShareRequest asks the server to grant read access to one secret. Exactly one
@@ -31,24 +32,33 @@ type ShareRequest struct {
 
 // Validate reports whether the request is well formed. The server enforces the
 // same rules; checking here turns a round-trip 400 into an immediate error.
+//
+// validation.Either passes only when exactly one member is valid, which is
+// precisely the "one of user or group, never both" rule.
 func (r ShareRequest) Validate(ctx context.Context) error {
-	switch {
-	case r.User != "" && r.Group != "":
-		return errors.New(ctx, "exactly one of user or group is required, not both")
-	case r.User == "" && r.Group == "":
-		return errors.New(ctx, "one of user or group is required")
-	case r.GrantDescription == "":
-		return errors.New(ctx, "grant description is required")
+	return validation.All{
+		validation.Name("user/group", validation.Either{
+			validation.Name("user", validation.True(r.User != "")),
+			validation.Name("group", validation.True(r.Group != "")),
+		}),
+		validation.Name("grant description", validation.True(r.GrantDescription != "")),
+		validation.Name("granted until", validation.HasValidationFunc(r.validateGrantedUntil)),
+	}.Validate(ctx)
+}
+
+// validateGrantedUntil accepts an empty value (a permanent grant) or an RFC 3339
+// timestamp, so a typo fails locally instead of as a server 400.
+func (r ShareRequest) validateGrantedUntil(ctx context.Context) error {
+	if r.GrantedUntil == "" {
+		return nil
 	}
-	if r.GrantedUntil != "" {
-		if _, err := time.Parse(time.RFC3339, r.GrantedUntil); err != nil {
-			return errors.Wrapf(
-				ctx,
-				err,
-				"granted-until %q is not an RFC 3339 timestamp (e.g. 2026-12-31T23:59:59Z)",
-				r.GrantedUntil,
-			)
-		}
+	if _, err := time.Parse(time.RFC3339, r.GrantedUntil); err != nil {
+		return errors.Wrapf(
+			ctx,
+			validation.Error,
+			"granted-until %q is not an RFC 3339 timestamp (e.g. 2026-12-31T23:59:59Z)",
+			r.GrantedUntil,
+		)
 	}
 	return nil
 }
@@ -62,16 +72,19 @@ type Share struct {
 	ID int `json:"id"`
 	// GrantDescription is the reason recorded with the grant.
 	GrantDescription string `json:"grant_description"`
-	// GrantedOn is when the grant was created.
-	GrantedOn string `json:"granted_on"`
+	// GrantedOn is when the grant was created, or nil when the server omits it.
+	// Pointer, not string: a null in one row would otherwise fail the decode for
+	// the whole list.
+	GrantedOn *string `json:"granted_on"`
 	// GrantedUntil is when the grant expires, or nil for a permanent grant.
 	GrantedUntil *string `json:"granted_until"`
 	// Group is the granted group's name, or nil for a user grant.
 	Group *string `json:"group"`
 	// User is the granted username, or nil for a group grant.
 	User *string `json:"user"`
-	// GrantedBy is the username that created the grant.
-	GrantedBy string `json:"granted_by"`
+	// GrantedBy is the username that created the grant, or nil when the server
+	// omits it. Pointer for the same reason as GrantedOn.
+	GrantedBy *string `json:"granted_by"`
 	// Secret is the granted secret's hashid.
 	Secret string `json:"secret"`
 }

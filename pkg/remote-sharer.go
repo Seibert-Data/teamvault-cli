@@ -24,9 +24,15 @@ import (
 // so the message is what the client can match on.
 const alreadySharedMarker = "was already shared with"
 
-// maxShareResults bounds how many grants Shares will page through, so a
-// misbehaving server cannot make the list unbounded.
+// maxShareResults bounds how many grants Shares returns, so a misbehaving server
+// cannot make the list unbounded.
 const maxShareResults = 1000
+
+// maxSharePages bounds the loop by ITERATIONS, not by accumulated results. A
+// server that answers with an empty `results` and a non-empty `next` never
+// advances the result count, so a result-only bound would spin until the context
+// is cancelled.
+const maxSharePages = 100
 
 // NewRemoteSharer creates a Sharer that issues share calls to a remote TeamVault
 // instance, reusing HTTP Basic auth identical to the read path.
@@ -96,7 +102,7 @@ func (s *remoteSharer) Share(
 	status, detail, err := s.call(
 		ctx,
 		http.MethodPost,
-		fmt.Sprintf("%s/api/secrets/%s/shares/", s.url.String(), key.String()),
+		fmt.Sprintf("%s/api/secrets/%s/shares/", s.url.String(), url.PathEscape(key.String())),
 		body,
 		&share,
 	)
@@ -121,10 +127,14 @@ func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
 	if err != nil {
 		return nil, errors.Wrapf(ctx, err, "parse base url failed")
 	}
-	nextURL := fmt.Sprintf("%s/api/secrets/%s/shares/", s.url.String(), key.String())
+	nextURL := fmt.Sprintf(
+		"%s/api/secrets/%s/shares/",
+		s.url.String(),
+		url.PathEscape(key.String()),
+	)
 
 	var result []Share
-	for len(result) < maxShareResults {
+	for page := 0; page < maxSharePages; page++ {
 		// Each page is a round trip; stop between pages when the caller cancelled
 		// rather than walking the rest of the pagination chain.
 		if err := ctx.Err(); err != nil {
@@ -158,7 +168,9 @@ func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
 		// following a tampered `next` to a different host would leak the TeamVault
 		// credentials. A relative next is same-origin by definition; an absolute
 		// one must match the configured host (host compared, not a raw prefix, so
-		// an http/https difference behind a proxy does not break pagination).
+		// an http/https difference behind a proxy does not break pagination) and
+		// must not downgrade https to http, which would send the same credentials
+		// in cleartext.
 		nextParsed, parseErr := url.Parse(*response.Next)
 		if parseErr != nil {
 			return nil, errors.Wrapf(ctx, parseErr, "parse next url %q failed", *response.Next)
@@ -169,6 +181,12 @@ func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
 				"refusing to follow share pagination to a different host %q (expected %q)",
 				nextParsed.Host,
 				baseParsed.Host,
+			)
+		}
+		if baseParsed.Scheme == "https" && nextParsed.Scheme == "http" {
+			return nil, errors.Errorf(
+				ctx,
+				"refusing to follow share pagination from https to http (credentials would travel in cleartext)",
 			)
 		}
 		nextURL = baseParsed.ResolveReference(nextParsed).String()
@@ -215,7 +233,7 @@ func (s *remoteSharer) call(
 
 	resp, err := s.httpClient.Do(
 		req,
-	) // #nosec G704 -- URLs are constructed from the configured base URL and API paths, not user input
+	) // #nosec G704 -- the HOST is config-fixed (SSRF is not in play); the secret key IS user-supplied and is url.PathEscape'd before it reaches the path
 	if err != nil {
 		return 0, "", errors.Wrapf(ctx, err, "execute request failed")
 	}
