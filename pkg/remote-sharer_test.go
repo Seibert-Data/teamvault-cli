@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 
 	libhttp "github.com/bborbe/http"
 	libtime "github.com/bborbe/time"
@@ -432,6 +433,40 @@ var _ = Describe("RemoteSharer", func() {
 
 			Expect(err).NotTo(BeNil())
 			Expect(err.Error()).To(ContainSubstring("different host"))
+		})
+
+		It("refuses an https-to-http downgrade on the same host", func() {
+			// The ghttp fixtures above are http://, so baseParsed.Scheme is never
+			// "https" and the downgrade branch would never be exercised there. A TLS
+			// fixture is the only way to reach it: same host and port, scheme
+			// downgraded — which the cross-host guard does NOT catch, and which would
+			// send the Basic-auth header in cleartext.
+			tlsServer := httptest.NewTLSServer(http.HandlerFunc(
+				func(resp http.ResponseWriter, req *http.Request) {
+					resp.Header().Set("Content-Type", "application/json")
+					//nolint:errcheck
+					fmt.Fprintf(resp, `{
+						"count": 2,
+						"next": "http://%s/api/secrets/AbC123/shares/?page=2",
+						"previous": null,
+						"results": [{"id": 1, "grant_description": "first", "user": "alice", "granted_by": "bborbe"}]
+					}`, req.Host)
+				},
+			))
+			defer tlsServer.Close()
+
+			tlsSharer := teamvault.NewRemoteSharer(
+				tlsServer.Client(),
+				teamvault.Url(tlsServer.URL),
+				teamvault.User(username),
+				teamvault.Password(password),
+				libtime.NewCurrentDateTime(),
+			)
+
+			_, err := tlsSharer.Shares(ctx, teamvault.Key("AbC123"))
+
+			Expect(err).NotTo(BeNil())
+			Expect(err.Error()).To(ContainSubstring("cleartext"))
 		})
 
 		It("rejects a next URL that does not parse", func() {

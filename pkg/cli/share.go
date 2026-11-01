@@ -6,6 +6,7 @@ package cli
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"strings"
@@ -108,7 +109,7 @@ func shareOne(
 	result, err := sharer.Share(ctx, key, request)
 	if err != nil {
 		var shareErr *teamvault.ShareError
-		if asShareError(err, &shareErr) {
+		if stderrors.As(err, &shareErr) {
 			return fmt.Sprintf(
 				"%s refused (%d: %s)",
 				key,
@@ -122,24 +123,6 @@ func shareOne(
 		return fmt.Sprintf("%s already-shared", key), nil
 	}
 	return fmt.Sprintf("%s shared", key), nil
-}
-
-// asShareError unwraps to a *teamvault.ShareError. The sharer returns it
-// unwrapped, but a wrapper added later would still be found through Unwrap, so
-// the check walks the chain rather than asserting on the outer value.
-func asShareError(err error, target **teamvault.ShareError) bool {
-	for err != nil {
-		if shareErr, ok := err.(*teamvault.ShareError); ok {
-			*target = shareErr
-			return true
-		}
-		unwrapper, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = unwrapper.Unwrap()
-	}
-	return false
 }
 
 // collectShareKeys merges positional keys, repeated --teamvault-key values and,

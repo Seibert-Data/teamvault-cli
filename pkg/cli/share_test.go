@@ -252,6 +252,48 @@ var _ = Describe("share", func() {
 		})
 	})
 
+	Describe("expiry", func() {
+		It("carries --granted-until into the request", func() {
+			mockSharer := &mocks.Sharer{}
+			mockSharer.ShareReturns(teamvault.ShareResult{Outcome: teamvault.ShareCreated}, nil)
+
+			_, err := runWithSharer(
+				mockSharer,
+				[]string{
+					"share", "AbC123",
+					"--user", "alice",
+					"--description", "temp access",
+					"--granted-until", "2030-01-01T00:00:00Z",
+				},
+				"",
+			)
+
+			Expect(err).To(BeNil())
+			Expect(mockSharer.ShareCallCount()).To(Equal(1))
+			_, _, request := mockSharer.ShareArgsForCall(0)
+			Expect(request.GrantedUntil).To(Equal("2030-01-01T00:00:00Z"))
+		})
+
+		It("rejects a malformed --granted-until before calling the sharer", func() {
+			mockSharer := &mocks.Sharer{}
+
+			_, err := runWithSharer(
+				mockSharer,
+				[]string{
+					"share", "AbC123",
+					"--user", "alice",
+					"--description", "temp access",
+					"--granted-until", "31.12.2026",
+				},
+				"",
+			)
+
+			Expect(err).NotTo(BeNil())
+			Expect(err.Error()).To(ContainSubstring("RFC 3339"))
+			Expect(mockSharer.ShareCallCount()).To(Equal(0))
+		})
+	})
+
 	Describe("group grants", func() {
 		It("sends the group on the single invocation and prints shared", func() {
 			mockSharer := &mocks.Sharer{}

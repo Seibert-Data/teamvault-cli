@@ -70,10 +70,19 @@ type resolvedCredentials struct {
 	pass       teamvault.Password
 }
 
-// resolveCredentials applies the documented precedence — flag → env var → config
-// file → Keychain. The config file wins over the flags when it exists, which is
-// why the per-stage apply users pass an explicit --teamvault-config: a shared
-// default config would otherwise silently replace their credentials.
+// resolveCredentials resolves the connection values, per field rather than by one
+// global precedence:
+//
+//   - url and user: flag/env first, then the config file, which OVERWRITES both
+//     unconditionally when it exists
+//   - password: flag/env first, then the config file only when the flag left it
+//     empty, then the Keychain
+//
+// That asymmetry is why the per-stage apply users pass an explicit
+// --teamvault-config: a shared default config would otherwise silently replace
+// their url and user. And because the Keychain is keyed by URL alone, never by
+// user, a missing password resolves to whoever last logged in against that URL —
+// so a wrong-user 403 here means "no password was supplied", not "wrong account".
 func (sf *SharedFlags) resolveCredentials(ctx context.Context) (resolvedCredentials, error) {
 	httpClient, err := factory.CreateHttpClient(ctx)
 	if err != nil {

@@ -192,6 +192,11 @@ func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
 		nextURL = baseParsed.ResolveReference(nextParsed).String()
 	}
 
+	// The cap is a bound on what is RETURNED, not just on when paging stops: a
+	// single page larger than the cap would otherwise be handed back whole.
+	if len(result) > maxShareResults {
+		result = result[:maxShareResults]
+	}
 	return result, nil
 }
 
