@@ -56,6 +56,11 @@ func createShareCommand(ctx context.Context, sf *SharedFlags) *cobra.Command {
 			out := cmd.OutOrStdout()
 			refused := 0
 			for _, key := range keys {
+				// Each key costs a round trip, so stop between keys when the
+				// caller cancelled instead of walking the rest of the list.
+				if err := ctx.Err(); err != nil {
+					return errors.Wrapf(ctx, err, "share cancelled after %d keys", refused)
+				}
 				line, err := shareOne(ctx, sharer, key, request)
 				if err != nil {
 					refused++

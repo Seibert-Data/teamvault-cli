@@ -107,6 +107,11 @@ func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
 
 	var result []Share
 	for len(result) < maxShareResults {
+		// Each page is a round trip; stop between pages when the caller cancelled
+		// rather than walking the rest of the pagination chain.
+		if err := ctx.Err(); err != nil {
+			return nil, errors.Wrapf(ctx, err, "list shares cancelled after %d grants", len(result))
+		}
 		var response struct {
 			Next    *string `json:"next"`
 			Results []Share `json:"results"`
