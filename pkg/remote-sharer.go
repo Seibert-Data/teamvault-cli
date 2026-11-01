@@ -63,16 +63,34 @@ func (s *remoteSharer) Share(
 		return ShareResult{}, err
 	}
 
+	// granted_until must be PRESENT even for a permanent grant. The server's
+	// serializer declares it allow_null=True but not required=False, so DRF
+	// treats an omitted key as a missing required field and answers
+	// 400 {"granted_until":["This field is required."]}. null is the "permanent"
+	// value. Found by the scenario-010 live round trip; the fake server does not
+	// model this.
+	var grantedUntil any
+	if request.GrantedUntil != "" {
+		grantedUntil = request.GrantedUntil
+	}
 	body := map[string]any{
 		"grant_description": request.GrantDescription,
+		"granted_until":     grantedUntil,
 	}
-	// The server requires exactly one of the two; Validate has already refused
-	// the both/neither cases, so this branch is a choice, not a fallback.
+	// BOTH user and group must be PRESENT, the unused one as an explicit null.
+	// The server's validate() subscripts data['group'] and data['user'] directly,
+	// so an omitted key is a KeyError and the endpoint answers 500 — not a 400.
+	// (A bad username still returns a clean 400, because field-level validation
+	// fails before validate() runs, which is what made this look like a server
+	// fault rather than a request-shape bug.) Found by the scenario-010 live run.
+	var user, group any
 	if request.Group != "" {
-		body["group"] = request.Group
+		group = request.Group
 	} else {
-		body["user"] = request.User
+		user = request.User
 	}
+	body["user"] = user
+	body["group"] = group
 
 	var share Share
 	status, detail, err := s.call(

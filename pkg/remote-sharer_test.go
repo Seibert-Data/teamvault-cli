@@ -72,6 +72,49 @@ var _ = Describe("RemoteSharer", func() {
 				Expect(err).NotTo(BeNil())
 				Expect(err.Error()).To(ContainSubstring("grant description is required"))
 			})
+
+			It("refuses a granted-until that is not RFC 3339", func() {
+				_, err := sharer.Share(ctx, teamvault.Key("AbC123"), teamvault.ShareRequest{
+					User:             "alice",
+					GrantDescription: "because",
+					GrantedUntil:     "31.12.2026",
+				})
+				Expect(err).NotTo(BeNil())
+				Expect(err.Error()).To(ContainSubstring("is not an RFC 3339 timestamp"))
+				Expect(server.ReceivedRequests()).To(BeEmpty())
+			})
+		})
+
+		Context("a grant with an expiry", func() {
+			It("sends granted_until as the given timestamp", func() {
+				var receivedBody map[string]any
+
+				server.RouteToHandler(
+					http.MethodPost,
+					"/api/secrets/AbC123/shares/",
+					ghttp.CombineHandlers(
+						ghttp.VerifyRequest(http.MethodPost, "/api/secrets/AbC123/shares/"),
+						func(resp http.ResponseWriter, req *http.Request) {
+							receivedBody = decodeJSONBody(req)
+							resp.WriteHeader(http.StatusCreated)
+							//nolint:errcheck
+							fmt.Fprint(
+								resp,
+								`{"id": 9, "grant_description": "temp", "user": "alice", "granted_by": "bborbe", "granted_until": "2030-01-01T00:00:00Z"}`,
+							)
+						},
+					),
+				)
+
+				_, err := sharer.Share(ctx, teamvault.Key("AbC123"), teamvault.ShareRequest{
+					User:             "alice",
+					GrantDescription: "temp",
+					GrantedUntil:     "2030-01-01T00:00:00Z",
+				})
+
+				Expect(err).To(BeNil())
+				Expect(receivedBody["granted_until"]).To(Equal("2030-01-01T00:00:00Z"))
+			})
 		})
 
 		Context("user grant", func() {
@@ -118,9 +161,15 @@ var _ = Describe("RemoteSharer", func() {
 
 				// The body is pinned: the server rejects a request carrying both or
 				// neither, and grant_description is required.
+				// The body is pinned to what the live server accepts: user AND group
+				// must both be present (the unused one null — an omitted key is a
+				// KeyError and a 500, not a 400), and granted_until must be present
+				// (an omitted key is a 400 "This field is required").
 				Expect(receivedBody).To(Equal(map[string]any{
 					"user":              "nuke-apply-dev",
+					"group":             nil,
 					"grant_description": "deploy reads",
+					"granted_until":     nil,
 				}))
 			})
 		})
@@ -159,9 +208,10 @@ var _ = Describe("RemoteSharer", func() {
 				Expect(result.Share.User).To(BeNil())
 				Expect(receivedBody).To(Equal(map[string]any{
 					"group":             "ops",
+					"user":              nil,
 					"grant_description": "ops reads",
+					"granted_until":     nil,
 				}))
-				Expect(receivedBody).NotTo(HaveKey("user"))
 			})
 		})
 

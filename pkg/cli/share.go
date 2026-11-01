@@ -19,10 +19,11 @@ import (
 // createShareCommand creates the `share` subcommand.
 func createShareCommand(ctx context.Context, sf *SharedFlags) *cobra.Command {
 	var (
-		flagKeys    []string
-		user        string
-		group       string
-		description string
+		flagKeys     []string
+		user         string
+		group        string
+		description  string
+		grantedUntil string
 	)
 
 	cmd := &cobra.Command{
@@ -38,6 +39,7 @@ func createShareCommand(ctx context.Context, sf *SharedFlags) *cobra.Command {
 				User:             user,
 				Group:            group,
 				GrantDescription: description,
+				GrantedUntil:     grantedUntil,
 			}
 			if err := request.Validate(ctx); err != nil {
 				return err
@@ -84,6 +86,12 @@ func createShareCommand(ctx context.Context, sf *SharedFlags) *cobra.Command {
 	cmd.Flags().
 		StringVar(&group, "group", "", "group name to grant read access to (mutually exclusive with --user)")
 	cmd.Flags().StringVar(&description, "description", "", "why the access is granted (required)")
+	cmd.Flags().StringVar(
+		&grantedUntil,
+		"granted-until",
+		"",
+		"RFC 3339 timestamp the grant expires at (e.g. 2026-12-31T23:59:59Z); omit for a permanent grant",
+	)
 
 	return cmd
 }

@@ -7,6 +7,7 @@ package teamvault
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/bborbe/errors"
 )
@@ -22,6 +23,10 @@ type ShareRequest struct {
 	Group string
 	// GrantDescription is the human-readable reason for the grant (required).
 	GrantDescription string
+	// GrantedUntil is the RFC 3339 timestamp the grant expires at, or empty for
+	// a permanent grant. The server requires the field to be present either way,
+	// so an empty value is sent as an explicit null.
+	GrantedUntil string
 }
 
 // Validate reports whether the request is well formed. The server enforces the
@@ -34,6 +39,16 @@ func (r ShareRequest) Validate(ctx context.Context) error {
 		return errors.New(ctx, "one of user or group is required")
 	case r.GrantDescription == "":
 		return errors.New(ctx, "grant description is required")
+	}
+	if r.GrantedUntil != "" {
+		if _, err := time.Parse(time.RFC3339, r.GrantedUntil); err != nil {
+			return errors.Wrapf(
+				ctx,
+				err,
+				"granted-until %q is not an RFC 3339 timestamp (e.g. 2026-12-31T23:59:59Z)",
+				r.GrantedUntil,
+			)
+		}
 	}
 	return nil
 }

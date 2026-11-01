@@ -153,6 +153,8 @@ teamvault-cli shares AbC123
 
 `share` prints one line per key — `<key> shared`, `<key> already-shared`, or `<key> refused (<status>: <server detail>)` — and exits non-zero when any key was refused, so a script cannot mistake a partial run for a clean one. Re-running a grant is safe: an existing grant reports `already-shared` instead of failing. Keys can be positional, repeated `--teamvault-key`, or `-` to read one key per line from stdin.
 
+Add `--granted-until <RFC3339>` (e.g. `2030-01-01T00:00:00Z`) for an expiring grant; without it the grant is permanent.
+
 `shares` lists the grant metadata — user, group, description, granted_by and granted_until — and never a secret value.
 
 Sharing needs the `is_shareable_by_user` permission on the secret, so run it as an account that owns or may share it. A `403` here means that permission was refused, not that your login is wrong.

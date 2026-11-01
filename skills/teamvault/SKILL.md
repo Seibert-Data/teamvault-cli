@@ -88,7 +88,7 @@ teamvault-cli share <KEY>... --group <name>    --description "<why>"   # grant t
 teamvault-cli shares <KEY>                                             # who can read it
 ```
 
-`share` prints one line per key — `<key> shared`, `<key> already-shared`, or `<key> refused (<status>: <server detail>)` — and exits non-zero if any key was refused. Re-running it is safe: an existing grant reports `already-shared` instead of failing. Keys can be positional, repeated `--teamvault-key`, or `-` for one key per line on stdin.
+`share` prints one line per key — `<key> shared`, `<key> already-shared`, or `<key> refused (<status>: <server detail>)` — and exits non-zero if any key was refused. Re-running it is safe: an existing grant reports `already-shared` instead of failing. Keys can be positional, repeated `--teamvault-key`, or `-` for one key per line on stdin. `--granted-until <RFC3339>` makes the grant expire; without it the grant is permanent.
 
 `shares` lists the grant metadata (user, group, description, granted_by, granted_until) and never a secret value.
 

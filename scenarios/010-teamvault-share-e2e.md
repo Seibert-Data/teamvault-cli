@@ -89,6 +89,15 @@ rm -f /tmp/tv-scenario-target.json
 
 Nothing automated. Step 7 is the cleanup, and it is manual by design — the CLI has no delete subcommand.
 
+## Findings from the first live run (2026-11-02)
+
+Two request-shape defects that no fake server could surface, both now fixed and pinned in `pkg/remote-sharer_test.go`:
+
+- **`granted_until` must be present.** Omitting it is `400 {"granted_until":["This field is required."]}` even for a permanent grant — the serializer declares `allow_null=True` but not `required=False`, and DRF requires the key.
+- **`user` *and* `group` must both be present.** The serializer's `validate()` subscripts `data['group']` and `data['user']` directly, so an omitted key is a `KeyError` and the endpoint answers **500**, not 400. A bad username still returns a clean 400 (field-level validation fails before `validate()` runs), which is what makes this look like a server fault rather than a request bug.
+
+Steps 1–5 and the 33-key idempotency run pass. **Step 6 is blocked**: the credentials in TeamVault entry `dwkXgO` do not authenticate `nuke-apply-dev` — `search` as that account returns 403, so the failure is authentication, not a per-secret permission. That needs the account's real password before the read-back can run.
+
 ## What this scenario would not catch
 
 It exercises the real server's share creation, duplicate detection and read grant. It does **not** cover `--group` (no group exists on the instance at time of writing) and it does not run in CI; the unit and fake-server specs cover the request body and the status mapping for both `--user` and `--group`.
