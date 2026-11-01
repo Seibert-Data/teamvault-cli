@@ -36,7 +36,7 @@ Library import path: `github.com/Seibert-Data/teamvault-cli/v5/pkg` (package `te
 - **Secret readers print with NO trailing newline** — `password`/`username`/`url`/`file` output the raw value so `curl -u "$(… password …)"` is basic-auth-safe. Do not add a newline.
 - **`KeychainServiceName = "teamvault-cli"`** (`pkg/keychain.go`) is the macOS Keychain storage key — renaming it orphans every user's stored credential. Treat as stable.
 - **Persistent flags are seeded from `TEAMVAULT_*` env vars** — preserves the `.envrc`/direnv contract. Keep the arg + env names exactly.
-- **Read-only tool** — no write-to-TeamVault. `login` writes only to the local Keychain. Do not add server-mutating commands.
+- **Write surface is deliberate and closed** — `login` writes only to the local Keychain; `create`, `update`, `htpasswd`, `share` and `shares` call the TeamVault API. Add a command only when the server already exposes the operation and the CLI can print a per-item result the operator can check; `share`/`shares` exist because a grant made by hand in the web UI leaves no record of what succeeded.
 - **bborbe conventions** — wrap errors with `github.com/bborbe/errors` (no `fmt.Errorf`), no `context.Background()` in business logic, `libtime` types over `time.Now()`. Factory functions are pure composition.
 
 ## Releases & Agents

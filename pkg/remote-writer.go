@@ -241,13 +241,19 @@ func readErrorDetail(resp *http.Response) string {
 }
 
 func (w *remoteWriter) createHeader() http.Header {
+	return newBasicAuthHeader(w.user, w.pass)
+}
+
+// newBasicAuthHeader builds the JSON + HTTP Basic auth headers every write call
+// carries. Shared with remoteSharer so the two paths cannot drift apart.
+func newBasicAuthHeader(user User, pass Password) http.Header {
 	httpHeader := make(http.Header)
 	httpHeader.Add(
 		"Authorization",
 		fmt.Sprintf(
 			"Basic %s",
 			base64.StdEncoding.EncodeToString(
-				[]byte(fmt.Sprintf("%s:%s", w.user.String(), w.pass.String())),
+				[]byte(fmt.Sprintf("%s:%s", user.String(), pass.String())),
 			),
 		),
 	)

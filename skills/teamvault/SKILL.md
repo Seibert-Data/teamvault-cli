@@ -78,6 +78,22 @@ Why it matters in an AI session: the conversation transcript leaves your machine
 - Do not log, print, or echo the value to confirm it — confirm success by the consuming command's exit status instead.
 - In project setups, resolve secrets at shell-entry via `.envrc` (`export DB_PASSWORD="$(teamvault-cli password --teamvault-key <KEY>)"`) rather than storing them in `.env`.
 
+## Granting access (optional)
+
+Grant a user or group read access, and check what is granted:
+
+```bash
+teamvault-cli share <KEY>... --user <username> --description "<why>"   # grant to a user
+teamvault-cli share <KEY>... --group <name>    --description "<why>"   # grant to a group
+teamvault-cli shares <KEY>                                             # who can read it
+```
+
+`share` prints one line per key — `<key> shared`, `<key> already-shared`, or `<key> refused (<status>: <server detail>)` — and exits non-zero if any key was refused. Re-running it is safe: an existing grant reports `already-shared` instead of failing. Keys can be positional, repeated `--teamvault-key`, or `-` for one key per line on stdin.
+
+`shares` lists the grant metadata (user, group, description, granted_by, granted_until) and never a secret value.
+
+Sharing requires the `is_shareable_by_user` permission on the secret, so it must run as an account that already owns or may share it. A `403` means that permission was refused — it is not a login problem, and re-running `teamvault-cli login` will not fix it.
+
 ## Config templating (optional)
 
 Render config files with TeamVault values at build time:

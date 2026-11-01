@@ -210,6 +210,8 @@ func NewRootCommand(ctx context.Context) *cobra.Command {
 	rootCmd.AddCommand(createUpdateCommand(ctx, sf))
 	rootCmd.AddCommand(createSearchCommand(ctx, sf))
 	rootCmd.AddCommand(createHtpasswdCommand(ctx, sf))
+	rootCmd.AddCommand(createShareCommand(ctx, sf))
+	rootCmd.AddCommand(createSharesCommand(ctx, sf))
 
 	return rootCmd
 }

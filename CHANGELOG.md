@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- feat(cli): add `share` and `shares` subcommands for granting and listing read access to TeamVault secrets through the server's shares API. `share` accepts one or more keys (positional, repeated `--teamvault-key`, or `-` for one key per line on stdin) and prints `<key> shared`, `<key> already-shared` or `<key> refused (<status>: <server detail>)` per key, exiting non-zero when any key was refused. A duplicate grant is reported as `already-shared` rather than an error, so re-running a grant is idempotent. `shares` lists the grants on one secret (user, group, description, granted_by, granted_until) and never a secret value. Adds the `Sharer` interface alongside `Writer` — a new interface rather than a fourth `Writer` method, so external implementers of the exported interface keep compiling.
+
 ## v5.10.3
 
 - fix(cli): `create --file` and `update --file` now send `filename` as a **top-level** field (the `filepath.Base` of the `--file` path) instead of omitting it. TeamVault ≥ 0.14.0 requires a top-level `filename` for file secrets and rejected every file create with `HTTP 400 {"filename": ["This field is required."]}`. `secret_data` still carries only `file_content`, and password-secret request bodies are byte-identical to before (no `filename` key).
