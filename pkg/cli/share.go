@@ -5,7 +5,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	stderrors "errors"
 	"fmt"
@@ -66,13 +65,21 @@ func createShareCommand(ctx context.Context, sf *SharedFlags) *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			refused := 0
+			processed := 0
 			for _, key := range keys {
 				// Each key costs a round trip, so stop between keys when the
 				// caller cancelled instead of walking the rest of the list.
 				if err := ctx.Err(); err != nil {
-					return errors.Wrapf(ctx, err, "share cancelled after %d keys", refused)
+					return errors.Wrapf(
+						ctx,
+						err,
+						"share cancelled after %d of %d keys",
+						processed,
+						len(keys),
+					)
 				}
 				line, err := shareOne(ctx, sharer, key, request)
+				processed++
 				if err != nil {
 					refused++
 				}
@@ -176,27 +183,38 @@ func collectShareKeys(
 	}
 
 	if readStdin {
-		// Bounded: `share -` on an endless pipe would otherwise read forever. A
-		// key is 6–12 characters, so 1 MiB and 10 000 keys are far past any real
-		// list, and exceeding either is an error rather than a silent truncation.
-		scanner := bufio.NewScanner(io.LimitReader(cmd.InOrStdin(), maxShareStdinBytes))
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" {
-				continue
-			}
-			candidates = append(candidates, line)
-			if len(candidates) > maxShareKeys {
-				return nil, errors.Errorf(
-					cmd.Context(),
-					"too many keys on stdin: more than %d",
-					maxShareKeys,
-				)
-			}
-		}
-		if err := scanner.Err(); err != nil {
+		// Bounded, and the bound is an ERROR rather than a quiet cut: this command
+		// mutates access, so a truncated key list would share a partial set and exit
+		// 0. Read one byte past the limit so hitting it is detectable — a bare
+		// LimitReader reports EOF at the cap, indistinguishable from a complete read.
+		data, err := io.ReadAll(io.LimitReader(cmd.InOrStdin(), maxShareStdinBytes+1))
+		if err != nil {
 			return nil, errors.Wrapf(cmd.Context(), err, "read keys from stdin failed")
 		}
+		if len(data) > maxShareStdinBytes {
+			return nil, errors.Errorf(
+				cmd.Context(),
+				"stdin exceeds %d bytes; pass fewer keys or split the run",
+				maxShareStdinBytes,
+			)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				candidates = append(candidates, line)
+			}
+		}
+	}
+
+	// The cap applies to EVERY key source, not just stdin: positional arguments
+	// and repeated --teamvault-key are equally unbounded.
+	if len(candidates) > maxShareKeys {
+		return nil, errors.Errorf(
+			cmd.Context(),
+			"too many keys: %d given, the maximum is %d",
+			len(candidates),
+			maxShareKeys,
+		)
 	}
 
 	if len(candidates) == 0 {

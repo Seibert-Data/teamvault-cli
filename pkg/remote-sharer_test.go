@@ -539,16 +539,18 @@ var _ = Describe("RemoteSharer", func() {
 
 			shares, err := sharer.Shares(ctx, teamvault.Key("AbC123"))
 
-			Expect(err).To(BeNil())
-			Expect(shares).To(BeEmpty())
+			// A partial list is an ERROR, not a warning: this is an access audit, and
+			// a glog warning never reaches the operator's terminal.
+			Expect(err).NotTo(BeNil())
+			Expect(err.Error()).To(ContainSubstring("incomplete"))
+			Expect(shares).To(BeNil())
 			// Bounded: the page cap, not an unbounded spin.
 			Expect(calls).To(BeNumerically("<=", 100))
 		})
 
-		It("truncates a single page larger than the result cap and says so", func() {
-			// A single page over the cap with no `next` never reaches the in-loop
-			// warning, so it must warn at the truncation itself rather than hand back
-			// a partial list that looks complete.
+		It("errors when a single page exceeds the result cap", func() {
+			// A single page over the cap with no `next` must not be handed back as a
+			// shorter, complete-looking list.
 			grants := make([]string, 0, 1001)
 			for i := 0; i < 1001; i++ {
 				grants = append(grants, fmt.Sprintf(
@@ -568,8 +570,9 @@ var _ = Describe("RemoteSharer", func() {
 
 			shares, err := sharer.Shares(ctx, teamvault.Key("AbC123"))
 
-			Expect(err).To(BeNil())
-			Expect(shares).To(HaveLen(1000))
+			Expect(err).NotTo(BeNil())
+			Expect(err.Error()).To(ContainSubstring("incomplete"))
+			Expect(shares).To(BeNil())
 		})
 
 		It("does not treat an unrelated 400 as already-shared", func() {

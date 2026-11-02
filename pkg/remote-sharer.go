@@ -235,27 +235,24 @@ func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
 		nextURL = baseParsed.ResolveReference(nextParsed).String()
 	}
 
-	// A loop that ran out of pages while the server still offered more hands back a
-	// partial list; say so, or the caller cannot tell it from a complete one.
+	// A partial list must never come back as success. This is an access audit: a
+	// silent cap would under-report who can read a secret, and a glog warning is
+	// not visible to the operator (the CLI never routes glog to stderr), so the
+	// caller would see a short list, exit 0, and no marker.
 	if pendingNext != "" {
-		glog.Warningf(
-			"teamvault shares: page cap (%d) reached with more pages pending; returning a partial list of %d grants",
+		return nil, errors.Errorf(
+			ctx,
+			"share list is incomplete: stopped at the %d-page cap with more pages pending (%d grants read); raise the cap or read the secret in the web UI",
 			maxSharePages,
 			len(result),
 		)
 	}
-
-	// The cap is a bound on what is RETURNED, not just on when paging stops: a
-	// single page larger than the cap would otherwise be handed back whole. Warn
-	// here too — the in-loop warning only fires on the multi-page branch, so a
-	// single oversized page with no `next` would truncate silently.
 	if len(result) > maxShareResults {
-		glog.Warningf(
-			"teamvault shares: result cap (%d) reached on a single page (%d grants); returning a truncated list",
+		return nil, errors.Errorf(
+			ctx,
+			"share list is incomplete: more than %d grants on one page; read the secret in the web UI",
 			maxShareResults,
-			len(result),
 		)
-		result = result[:maxShareResults]
 	}
 	return result, nil
 }
