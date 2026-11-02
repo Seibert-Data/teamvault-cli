@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 
 	libhttp "github.com/bborbe/http"
 	libtime "github.com/bborbe/time"
@@ -339,6 +340,40 @@ var _ = Describe("RemoteConnector", func() {
 			_, searchErr := remoteConnector.Search(ctx, "searchString")
 			Expect(searchErr).NotTo(BeNil())
 			Expect(searchErr.Error()).To(ContainSubstring("different host"))
+		})
+	})
+
+	Context("Search with an https-to-http downgrade next link", func() {
+		It("refuses to follow the downgrade and errors", func() {
+			// The ghttp fixtures are all http://, so baseParsed.Scheme is never
+			// "https" there and this branch would go untested. A TLS fixture with a
+			// same-host http:// next is the only way to reach it — and the cross-host
+			// guard does NOT catch it, since the host and port match.
+			tlsServer := httptest.NewTLSServer(http.HandlerFunc(
+				func(resp http.ResponseWriter, req *http.Request) {
+					resp.Header().Set("Content-Type", "application/json")
+					//nolint:errcheck
+					fmt.Fprintf(
+						resp,
+						`{"count":2,"next":"http://%s/api/secrets/?page=2","previous":null,"results":[{"hashid":"key1","name":"one","username":"u","url":"https://example.com"}]}`,
+						req.Host,
+					)
+				},
+			))
+			defer tlsServer.Close()
+
+			tlsConnector := teamvault.NewRemoteConnector(
+				tlsServer.Client(),
+				teamvault.Url(tlsServer.URL),
+				teamvault.User("user"),
+				teamvault.Password("pass"),
+				libtime.NewCurrentDateTime(),
+			)
+
+			_, searchErr := tlsConnector.Search(ctx, "searchString")
+
+			Expect(searchErr).NotTo(BeNil())
+			Expect(searchErr.Error()).To(ContainSubstring("cleartext"))
 		})
 	})
 
