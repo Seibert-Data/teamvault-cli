@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v5.11.0
 
 - feat(cli): add `share` and `shares` subcommands for granting and listing read access to TeamVault secrets through the server's shares API. `share` accepts one or more keys (positional, repeated `--teamvault-key`, or `-` for one key per line on stdin) and prints `<key> shared`, `<key> already-shared` or `<key> refused (<status>: <server detail>)` per key, exiting non-zero when any key was refused. A duplicate grant is reported as `already-shared` rather than an error, so re-running a grant is idempotent. `shares` lists the grants on one secret (user, group, description, granted_by, granted_until) and never a secret value. `share --granted-until <RFC3339>` creates an expiring grant; omitting it creates a permanent one. The request body always carries `user`, `group` and `granted_until` — the unused one as an explicit `null` — because TeamVault's share serializer subscripts `data['group']`/`data['user']` and requires `granted_until`, so an omitted key is a 500 or a 400 rather than a validation message. Adds the `Sharer` interface alongside `Writer` — a new interface rather than a fourth `Writer` method, so external implementers of the exported interface keep compiling.
 
