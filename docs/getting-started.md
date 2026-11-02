@@ -141,7 +141,25 @@ teamvault-cli password --teamvault-key AbC123
 
 The agent gets the value it needs, the secret is resolved just-in-time from TeamVault, and nothing sensitive is written into the conversation or the repository. This is the sanctioned replacement for ad-hoc `op` usage on company-managed secrets.
 
-## 7. Config templating (optional)
+## 7. Grant access (optional)
+
+Grant a user or group read access to a secret, and check what is granted:
+
+```bash
+teamvault-cli share AbC123 --user deploy-reader --description "dev apply reads it"
+teamvault-cli share AbC123 AbC456 --group ops --description "ops on-call"
+teamvault-cli shares AbC123
+```
+
+`share` prints one line per key — `<key> shared`, `<key> already-shared`, or `<key> refused (<status>: <server detail>)` — and exits non-zero when any key was refused, so a script cannot mistake a partial run for a clean one. Re-running a grant is safe: an existing grant reports `already-shared` instead of failing. Keys can be positional, repeated `--teamvault-key`, or `-` to read one key per line from stdin.
+
+Add `--granted-until <RFC3339>` (e.g. `2030-01-01T00:00:00Z`) for an expiring grant; without it the grant is permanent.
+
+`shares` lists the grant metadata — user, group, description, granted_by and granted_until — and never a secret value.
+
+Sharing needs the `is_shareable_by_user` permission on the secret, so run it as an account that owns or may share it. A `403` here means that permission was refused, not that your login is wrong.
+
+## 8. Config templating (optional)
 
 Render config files with secrets pulled from TeamVault at build time:
 
@@ -157,6 +175,9 @@ Render config files with secrets pulled from TeamVault at build time:
 | `teamvault-cli username --teamvault-key <KEY>` | print a secret's username |
 | `teamvault-cli url --teamvault-key <KEY>` | print a secret's URL |
 | `teamvault-cli file --teamvault-key <KEY>` | print a secret's file contents |
+| `teamvault-cli share <KEY>... --user <NAME> --description <WHY>` | grant a user read access to one or more secrets |
+| `teamvault-cli share <KEY>... --group <NAME> --description <WHY>` | grant a group read access to one or more secrets |
+| `teamvault-cli shares <KEY>` | list who has read access to a secret |
 | `teamvault-cli config parse` | render a template from stdin |
 | `teamvault-cli config generate --source-dir <DIR> --target-dir <DIR>` | render a directory of templates |
 

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
@@ -45,12 +46,47 @@ func SetNewWriterForTest(
 func ResetNewWriterForTest() { newWriter = defaultNewWriter }
 
 // buildWriter creates a TeamVault writer using the shared flags.
-// Credentials resolve through the same precedence as the read path:
-// flag → env var → config file → Keychain.
 func (sf *SharedFlags) buildWriter(ctx context.Context) (teamvault.Writer, error) {
+	creds, err := sf.resolveCredentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return factory.CreateRemoteWriter(
+		creds.httpClient,
+		creds.url,
+		creds.user,
+		creds.pass,
+		libtime.NewCurrentDateTime(),
+	), nil
+}
+
+// resolvedCredentials is what every remote client needs: one HTTP client and the
+// three connection values, resolved once so the reader, writer and sharer paths
+// cannot disagree about which credential they are using.
+type resolvedCredentials struct {
+	httpClient *http.Client
+	url        teamvault.Url
+	user       teamvault.User
+	pass       teamvault.Password
+}
+
+// resolveCredentials resolves the connection values, per field rather than by one
+// global precedence:
+//
+//   - url and user: flag/env first, then the config file, which OVERWRITES both
+//     unconditionally when it exists
+//   - password: flag/env first, then the config file only when the flag left it
+//     empty, then the Keychain
+//
+// That asymmetry is why the per-stage apply users pass an explicit
+// --teamvault-config: a shared default config would otherwise silently replace
+// their url and user. And because the Keychain is keyed by URL alone, never by
+// user, a missing password resolves to whoever last logged in against that URL —
+// so a wrong-user 403 here means "no password was supplied", not "wrong account".
+func (sf *SharedFlags) resolveCredentials(ctx context.Context) (resolvedCredentials, error) {
 	httpClient, err := factory.CreateHttpClient(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(ctx, err, "create httpClient failed")
+		return resolvedCredentials{}, errors.Wrapf(ctx, err, "create httpClient failed")
 	}
 
 	resolvedURL := teamvault.Url(sf.url)
@@ -61,7 +97,7 @@ func (sf *SharedFlags) buildWriter(ctx context.Context) (teamvault.Writer, error
 	if configPath.Exists() {
 		config, err := configPath.Parse()
 		if err != nil {
-			return nil, errors.Wrapf(ctx, err, "parse teamvault config failed")
+			return resolvedCredentials{}, errors.Wrapf(ctx, err, "parse teamvault config failed")
 		}
 		resolvedURL = config.Url
 		resolvedUser = config.User
@@ -71,13 +107,13 @@ func (sf *SharedFlags) buildWriter(ctx context.Context) (teamvault.Writer, error
 	}
 
 	if resolvedURL == "" {
-		return nil, errors.New(
+		return resolvedCredentials{}, errors.New(
 			ctx,
 			"teamvault URL is required; use --teamvault-url, TEAMVAULT_URL, or configure in --teamvault-config",
 		)
 	}
 	if resolvedUser == "" {
-		return nil, errors.New(
+		return resolvedCredentials{}, errors.New(
 			ctx,
 			"teamvault user is required; use --teamvault-user, TEAMVAULT_USER, or configure in --teamvault-config",
 		)
@@ -87,7 +123,7 @@ func (sf *SharedFlags) buildWriter(ctx context.Context) (teamvault.Writer, error
 		kc := teamvault.NewKeychain()
 		pass, err := kc.ReadPassword(ctx, resolvedURL)
 		if err != nil {
-			return nil, errors.Wrapf(
+			return resolvedCredentials{}, errors.Wrapf(
 				ctx,
 				err,
 				"read keychain password for %s failed",
@@ -101,12 +137,21 @@ func (sf *SharedFlags) buildWriter(ctx context.Context) (teamvault.Writer, error
 	if sf.timeout != "" {
 		d, err := libtime.ParseDuration(ctx, sf.timeout)
 		if err != nil {
-			return nil, errors.Wrapf(ctx, err, "parse teamvault-timeout %q failed", sf.timeout)
+			return resolvedCredentials{}, errors.Wrapf(
+				ctx,
+				err,
+				"parse teamvault-timeout %q failed",
+				sf.timeout,
+			)
 		}
 		cliTimeout = *d
 	}
 	if cliTimeout.Duration() < 0 {
-		return nil, errors.Errorf(ctx, "invalid timeout %v: must be >= 0", cliTimeout.Duration())
+		return resolvedCredentials{}, errors.Errorf(
+			ctx,
+			"invalid timeout %v: must be >= 0",
+			cliTimeout.Duration(),
+		)
 	}
 
 	httpClient.Timeout = cliTimeout.Duration()
@@ -114,13 +159,12 @@ func (sf *SharedFlags) buildWriter(ctx context.Context) (teamvault.Writer, error
 		httpClient.Timeout = 5 * 1e9 // 5s default
 	}
 
-	return factory.CreateRemoteWriter(
-		httpClient,
-		resolvedURL,
-		resolvedUser,
-		resolvedPass,
-		libtime.NewCurrentDateTime(),
-	), nil
+	return resolvedCredentials{
+		httpClient: httpClient,
+		url:        resolvedURL,
+		user:       resolvedUser,
+		pass:       resolvedPass,
+	}, nil
 }
 
 // isTTYStdin returns true if os.Stdin is connected to an interactive terminal.
