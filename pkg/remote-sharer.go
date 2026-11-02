@@ -175,7 +175,9 @@ func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
 		if parseErr != nil {
 			return nil, errors.Wrapf(ctx, parseErr, "parse next url %q failed", *response.Next)
 		}
-		if nextParsed.Host != "" && nextParsed.Host != baseParsed.Host {
+		// Hosts compare case-insensitively: DNS is case-insensitive and a proxy
+		// may rewrite the casing, which would otherwise read as a different host.
+		if nextParsed.Host != "" && !strings.EqualFold(nextParsed.Host, baseParsed.Host) {
 			return nil, errors.Errorf(
 				ctx,
 				"refusing to follow share pagination to a different host %q (expected %q)",
@@ -193,8 +195,15 @@ func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
 	}
 
 	// The cap is a bound on what is RETURNED, not just on when paging stops: a
-	// single page larger than the cap would otherwise be handed back whole.
+	// single page larger than the cap would otherwise be handed back whole. Warn
+	// here too — the in-loop warning only fires on the multi-page branch, so a
+	// single oversized page with no `next` would truncate silently.
 	if len(result) > maxShareResults {
+		glog.Warningf(
+			"teamvault shares: result cap (%d) reached on a single page (%d grants); returning a truncated list",
+			maxShareResults,
+			len(result),
+		)
 		result = result[:maxShareResults]
 	}
 	return result, nil

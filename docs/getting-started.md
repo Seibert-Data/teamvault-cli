@@ -146,7 +146,7 @@ The agent gets the value it needs, the secret is resolved just-in-time from Team
 Grant a user or group read access to a secret, and check what is granted:
 
 ```bash
-teamvault-cli share AbC123 --user nuke-apply-dev --description "dev apply reads it"
+teamvault-cli share AbC123 --user deploy-reader --description "dev apply reads it"
 teamvault-cli share AbC123 AbC456 --group ops --description "ops on-call"
 teamvault-cli shares AbC123
 ```

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
 	libhttp "github.com/bborbe/http"
 	libtime "github.com/bborbe/time"
@@ -514,6 +515,57 @@ var _ = Describe("RemoteSharer", func() {
 			Expect(shares).To(BeEmpty())
 			// Bounded: the page cap, not an unbounded spin.
 			Expect(calls).To(BeNumerically("<=", 100))
+		})
+
+		It("truncates a single page larger than the result cap and says so", func() {
+			// A single page over the cap with no `next` never reaches the in-loop
+			// warning, so it must warn at the truncation itself rather than hand back
+			// a partial list that looks complete.
+			grants := make([]string, 0, 1001)
+			for i := 0; i < 1001; i++ {
+				grants = append(grants, fmt.Sprintf(
+					`{"id": %d, "grant_description": "g%d", "user": "alice", "granted_by": "bborbe"}`,
+					i,
+					i,
+				))
+			}
+			server.RouteToHandler(
+				http.MethodGet,
+				"/api/secrets/AbC123/shares/",
+				ghttp.RespondWith(http.StatusOK, fmt.Sprintf(
+					`{"count": 1001, "next": null, "previous": null, "results": [%s]}`,
+					strings.Join(grants, ","),
+				)),
+			)
+
+			shares, err := sharer.Shares(ctx, teamvault.Key("AbC123"))
+
+			Expect(err).To(BeNil())
+			Expect(shares).To(HaveLen(1000))
+		})
+
+		It("does not treat an unrelated 400 as already-shared", func() {
+			// The marker is the server's duplicate message. A 400 that merely
+			// mentions sharing must stay a refusal — a false `already-shared` would
+			// report a grant that does not exist.
+			server.RouteToHandler(
+				http.MethodPost,
+				"/api/secrets/AbC123/shares/",
+				ghttp.RespondWith(
+					http.StatusBadRequest,
+					`{"grant_description":["cannot be blank when sharing"]}`,
+				),
+			)
+
+			_, err := sharer.Share(ctx, teamvault.Key("AbC123"), teamvault.ShareRequest{
+				User:             "alice",
+				GrantDescription: "because",
+			})
+
+			Expect(err).NotTo(BeNil())
+			var shareErr *teamvault.ShareError
+			Expect(errors.As(err, &shareErr)).To(BeTrue())
+			Expect(shareErr.StatusCode).To(Equal(http.StatusBadRequest))
 		})
 
 		It("stops between pages when the context is cancelled", func() {

@@ -96,7 +96,9 @@ Two request-shape defects that no fake server could surface, both now fixed and 
 - **`granted_until` must be present.** Omitting it is `400 {"granted_until":["This field is required."]}` even for a permanent grant — the serializer declares `allow_null=True` but not `required=False`, and DRF requires the key.
 - **`user` *and* `group` must both be present.** The serializer's `validate()` subscripts `data['group']` and `data['user']` directly, so an omitted key is a `KeyError` and the endpoint answers **500**, not 400. A bad username still returns a clean 400 (field-level validation fails before `validate()` runs), which is what makes this look like a server fault rather than a request bug.
 
-Steps 1–5 and the 33-key idempotency run pass. **Step 6 is blocked**: the credentials in TeamVault entry `dwkXgO` do not authenticate `nuke-apply-dev` — `search` as that account returns 403, so the failure is authentication, not a per-secret permission. That needs the account's real password before the read-back can run.
+Steps 1–5 and the 33-key idempotency run pass. Step 6 first appeared blocked — every read as the target account returned 403, including `search`. That was not a credential or grant problem: the throwaway config used `"password"` where `pkg/config.go` expects `"pass"`, so the value was dropped, the empty password fell through to the Keychain (keyed by URL alone, never by user), and the request went out as the *operator*. With `"pass"` the read-back returns 33/33.
+
+**That precedence trap is the reason step 6 passes `--teamvault-config` explicitly.** A config file overrides `--teamvault-url`/`--teamvault-user` unconditionally whenever it exists, and a missing password resolves through a URL-keyed Keychain — so a wrong-user 403 here means "no password reached the request", not "the account is wrong".
 
 ## What this scenario would not catch
 
