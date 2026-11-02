@@ -5,6 +5,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	stderrors "errors"
 	"fmt"
@@ -15,6 +16,13 @@ import (
 	"github.com/spf13/cobra"
 
 	teamvault "github.com/Seibert-Data/teamvault-cli/v5/pkg"
+)
+
+const (
+	// maxShareStdinBytes bounds how much of stdin `share -` will read.
+	maxShareStdinBytes = 1 << 20
+	// maxShareKeys bounds how many keys one invocation will act on.
+	maxShareKeys = 10000
 )
 
 // createShareCommand creates the `share` subcommand.
@@ -114,15 +122,32 @@ func shareOne(
 				"%s refused (%d: %s)",
 				key,
 				shareErr.StatusCode,
-				shareErr.Detail,
+				oneLine(shareErr.Detail),
 			), err
 		}
-		return fmt.Sprintf("%s refused (error: %v)", key, err), err
+		return fmt.Sprintf("%s refused (error: %s)", key, oneLine(err.Error())), err
 	}
 	if result.Outcome == teamvault.ShareAlreadyExists {
+		// A duplicate is the outcome the caller asked for: the access exists, so a
+		// re-run stays idempotent rather than failing.
 		return fmt.Sprintf("%s already-shared", key), nil
 	}
 	return fmt.Sprintf("%s shared", key), nil
+}
+
+// oneLine collapses a server-supplied message onto a single line: each result is
+// one line by contract, and a body carrying CR/LF or other control characters
+// would otherwise break the per-key output (and the parsing that reads it).
+func oneLine(value string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == '\t' {
+			return ' '
+		}
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, value)
 }
 
 // collectShareKeys merges positional keys, repeated --teamvault-key values and,
@@ -151,15 +176,26 @@ func collectShareKeys(
 	}
 
 	if readStdin {
-		data, err := io.ReadAll(cmd.InOrStdin())
-		if err != nil {
-			return nil, errors.Wrapf(cmd.Context(), err, "read keys from stdin failed")
-		}
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				candidates = append(candidates, line)
+		// Bounded: `share -` on an endless pipe would otherwise read forever. A
+		// key is 6–12 characters, so 1 MiB and 10 000 keys are far past any real
+		// list, and exceeding either is an error rather than a silent truncation.
+		scanner := bufio.NewScanner(io.LimitReader(cmd.InOrStdin(), maxShareStdinBytes))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
 			}
+			candidates = append(candidates, line)
+			if len(candidates) > maxShareKeys {
+				return nil, errors.Errorf(
+					cmd.Context(),
+					"too many keys on stdin: more than %d",
+					maxShareKeys,
+				)
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			return nil, errors.Wrapf(cmd.Context(), err, "read keys from stdin failed")
 		}
 	}
 

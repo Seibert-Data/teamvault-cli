@@ -470,6 +470,34 @@ var _ = Describe("RemoteSharer", func() {
 			Expect(err.Error()).To(ContainSubstring("cleartext"))
 		})
 
+		It("follows a relative next, which is what DRF actually sends", func() {
+			server.RouteToHandler(
+				http.MethodGet,
+				"/api/secrets/AbC123/shares/",
+				func(resp http.ResponseWriter, req *http.Request) {
+					resp.WriteHeader(http.StatusOK)
+					if req.URL.Query().Get("page") == "2" {
+						//nolint:errcheck
+						fmt.Fprint(resp, `{"count": 2, "next": null, "previous": null,
+							"results": [{"id": 2, "grant_description": "second", "user": "bob", "granted_by": "bborbe"}]}`)
+						return
+					}
+					//nolint:errcheck
+					fmt.Fprint(
+						resp,
+						`{"count": 2, "next": "/api/secrets/AbC123/shares/?page=2", "previous": null,
+						"results": [{"id": 1, "grant_description": "first", "user": "alice", "granted_by": "bborbe"}]}`,
+					)
+				},
+			)
+
+			shares, err := sharer.Shares(ctx, teamvault.Key("AbC123"))
+
+			Expect(err).To(BeNil())
+			Expect(shares).To(HaveLen(2))
+			Expect(shares[1].GrantDescription).To(Equal("second"))
+		})
+
 		It("rejects a next URL that does not parse", func() {
 			server.RouteToHandler(
 				http.MethodGet,

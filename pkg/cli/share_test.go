@@ -51,14 +51,16 @@ var _ = Describe("share", func() {
 		if stdin != "" {
 			cmd.SetIn(strings.NewReader(stdin))
 		}
-		cli.SetNewSharerForTest(
+		// Restore the PREVIOUS seam, not the package default: a nested override
+		// would otherwise be clobbered by whichever spec finished last.
+		restore := cli.SetNewSharerForTest(
 			func(sf *cli.SharedFlags) func(context.Context) (teamvault.Sharer, error) {
 				return func(ctx context.Context) (teamvault.Sharer, error) {
 					return mockSharer, nil
 				}
 			},
 		)
-		defer cli.ResetNewSharerForTest()
+		defer restore()
 		err := cmd.Execute()
 		return outBuf.String(), err
 	}

@@ -69,10 +69,11 @@ func writeShares(
 	asJSON bool,
 ) error {
 	if asJSON {
-		// Project onto the same fields the table shows, and drop the server's
-		// `secret` hashid: the caller already passed the key, so repeating it
-		// adds nothing — and a JSON field named "secret" invites a reader (and a
-		// scanner) to think a secret value is being emitted.
+		// Project onto the grant fields the table shows (plus granted_on, which the
+		// table has no column for), and drop the server's `secret` hashid: the caller
+		// already passed the key, so repeating it adds nothing — and a JSON field
+		// named "secret" invites a reader (and a scanner) to think a secret value is
+		// being emitted.
 		view := make([]shareJSON, 0, len(shares))
 		for _, share := range shares {
 			view = append(view, shareJSON{

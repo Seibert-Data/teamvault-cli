@@ -263,12 +263,21 @@ func (r *remoteConnector) Search(ctx context.Context, search string) ([]SearchRe
 		if parseErr != nil {
 			return nil, errors.Wrapf(ctx, parseErr, "parse next url %q failed", *response.Next)
 		}
-		if nextParsed.Host != "" && nextParsed.Host != baseParsed.Host {
+		// Hosts compare case-insensitively: DNS is case-insensitive and a proxy may
+		// rewrite the casing, which would otherwise read as a different host.
+		if nextParsed.Host != "" && !strings.EqualFold(nextParsed.Host, baseParsed.Host) {
 			return nil, errors.Errorf(
 				ctx,
 				"refusing to follow search pagination to a different host %q (expected %q)",
 				nextParsed.Host,
 				baseParsed.Host,
+			)
+		}
+		// A same-host downgrade still leaks the Basic-auth header in cleartext.
+		if baseParsed.Scheme == "https" && nextParsed.Scheme == "http" {
+			return nil, errors.Errorf(
+				ctx,
+				"refusing to follow search pagination from https to http (credentials would travel in cleartext)",
 			)
 		}
 		nextURL = baseParsed.ResolveReference(nextParsed).String()

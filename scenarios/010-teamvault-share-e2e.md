@@ -71,12 +71,18 @@ echo "$KEY"
 **6. Read it back as the target account.** `~/.config/teamvault-cli/config.json` overwrites `TEAMVAULT_USER`/`TEAMVAULT_PASS` whenever it exists, so the check must pass an explicit config or the environment is silently ignored and the read happens as *you* — who can read everything, which would make this step pass for the wrong reason.
 
 ```bash
+set -euo pipefail
 umask 077
-cat > /tmp/tv-scenario-target.json <<JSON
-{"url": "<https://your-teamvault-host>", "user": "$TARGET_USER", "password": "<that account's password>"}
-JSON
-"$TV" --teamvault-config /tmp/tv-scenario-target.json password --teamvault-key "$KEY"
-rm -f /tmp/tv-scenario-target.json
+TMPCFG="$(mktemp -t tv-scenario-target)"
+trap 'rm -f "$TMPCFG"' EXIT
+# The field is `pass`, NOT `password` — pkg/config.go tags it `pass`, and an
+# unknown key is dropped silently. A wrong key leaves the password empty, the
+# Keychain (keyed by URL alone, never by user) supplies the operator's password,
+# and the check then passes as the wrong account.
+printf '{"url":"%s","user":"%s","pass":"%s"}\n' \
+  "<https://your-teamvault-host>" "$TARGET_USER" "<that account's password>" > "$TMPCFG"
+test -s "$TMPCFG"          # an unreadable config must fail here, not pass silently
+"$TV" --teamvault-config "$TMPCFG" password --teamvault-key "$KEY"
 ```
 
 - [ ] Prints the throwaway's password — the grant actually took effect

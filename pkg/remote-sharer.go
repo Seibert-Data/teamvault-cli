@@ -18,11 +18,20 @@ import (
 	"github.com/golang/glog"
 )
 
-// alreadySharedMarker identifies the server's duplicate-grant refusal. TeamVault
-// raises a DRF ValidationError with code='unique' and the message "Secret … was
-// already shared with …"; the response body carries the message, not the code,
-// so the message is what the client can match on.
-const alreadySharedMarker = "was already shared with"
+// alreadySharedPrefix and alreadySharedMarker identify the server's duplicate
+// grant. TeamVault raises a DRF ValidationError with code='unique' and the
+// message "Secret <secret> was already shared with <type> <name>."; the body
+// carries the message, not the code.
+//
+// The match is deliberately narrow. DRF also ECHOES the submitted value, so
+// `--user "x was already shared with y"` produces a 400 whose `user` field
+// contains the marker — a substring match anywhere in the body would report
+// `already-shared`, exit 0, and claim a grant that was never created. Only the
+// structured `non_field_errors` entry counts.
+const (
+	alreadySharedPrefix = "Secret "
+	alreadySharedMarker = " was already shared with "
+)
 
 // maxShareResults bounds how many grants Shares returns, so a misbehaving server
 // cannot make the list unbounded.
@@ -113,13 +122,39 @@ func (s *remoteSharer) Share(
 	switch {
 	case status/100 == 2:
 		return ShareResult{Outcome: ShareCreated, Share: share}, nil
-	case status == http.StatusBadRequest && strings.Contains(detail, alreadySharedMarker):
+	case status == http.StatusBadRequest && isAlreadySharedDetail(detail):
 		// A duplicate is the outcome the caller asked for, not a failure: the
 		// access exists either way, so re-running a grant stays idempotent.
 		return ShareResult{Outcome: ShareAlreadyExists}, nil
 	default:
 		return ShareResult{}, &ShareError{Key: key, StatusCode: status, Detail: detail}
 	}
+}
+
+// isAlreadySharedDetail reports whether a 400 body is the server's duplicate-grant
+// refusal, and not merely a body that happens to contain the phrase. DRF puts the
+// duplicate message in `non_field_errors` and echoes submitted values in the
+// field-keyed entries, so only the former is inspected.
+func isAlreadySharedDetail(detail string) bool {
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(detail), &body); err != nil {
+		return false
+	}
+	raw, ok := body["non_field_errors"]
+	if !ok {
+		return false
+	}
+	var messages []string
+	if err := json.Unmarshal(raw, &messages); err != nil {
+		return false
+	}
+	for _, message := range messages {
+		if strings.HasPrefix(message, alreadySharedPrefix) &&
+			strings.Contains(message, alreadySharedMarker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
@@ -134,6 +169,10 @@ func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
 	)
 
 	var result []Share
+	// pendingNext is non-empty when the loop stopped while the server still offered
+	// another page — by the page cap or the result cap. The caller is then handed a
+	// partial list, which must not look complete.
+	var pendingNext string
 	for page := 0; page < maxSharePages; page++ {
 		// Each page is a round trip; stop between pages when the caller cancelled
 		// rather than walking the rest of the pagination chain.
@@ -155,8 +194,10 @@ func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
 		result = append(result, response.Results...)
 
 		if response.Next == nil || *response.Next == "" {
+			pendingNext = ""
 			break
 		}
+		pendingNext = *response.Next
 		if len(result) >= maxShareResults {
 			glog.Warningf(
 				"teamvault shares: result cap (%d) reached; more grants exist but were not fetched",
@@ -192,6 +233,16 @@ func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
 			)
 		}
 		nextURL = baseParsed.ResolveReference(nextParsed).String()
+	}
+
+	// A loop that ran out of pages while the server still offered more hands back a
+	// partial list; say so, or the caller cannot tell it from a complete one.
+	if pendingNext != "" {
+		glog.Warningf(
+			"teamvault shares: page cap (%d) reached with more pages pending; returning a partial list of %d grants",
+			maxSharePages,
+			len(result),
+		)
 	}
 
 	// The cap is a bound on what is RETURNED, not just on when paging stops: a
