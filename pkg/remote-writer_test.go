@@ -523,4 +523,15 @@ var _ = Describe("RemoteWriter key escaping", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(escapedPath).To(Equal("/api/secrets/a%2Fb/"))
 	})
+
+	It("encodes a dot-only key so it cannot become a directory step", func() {
+		desc := "updated"
+		_, _, err := writer.Update(
+			ctx,
+			teamvault.Key(".."),
+			teamvault.UpdateSecret{Description: &desc},
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(escapedPath).To(Equal("/api/secrets/%2E%2E/"))
+	})
 })

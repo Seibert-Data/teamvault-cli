@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2025 Benjamin Borbe All rights reserved.
+// Copyright (c) 2016-2026 Benjamin Borbe All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -6,8 +6,8 @@ package teamvault
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
+	"encoding/hex"
+	stderrors "errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,11 +16,17 @@ import (
 	"github.com/golang/glog"
 )
 
-// unsafeCacheChars matches every character a cache directory name may not
-// contain. A key is not validated beyond "not empty" (see Key.Validate), so
-// the cache path has to sanitize it itself: a key such as "../../.ssh" would
+// ErrCacheUnavailable is returned when the cache root cannot be resolved, for
+// example because the home directory is unknown. The cache then fails closed
+// instead of resolving relative to the process working directory, where a
+// caller-supplied key could place files.
+var ErrCacheUnavailable = stderrors.New("teamvault cache directory unavailable")
+
+// safeCacheChars matches a key that can be used unchanged as a cache directory
+// name. A key is not validated beyond "not empty" (see Key.Validate), so the
+// cache path has to sanitize it itself: a key such as "../../.ssh" would
 // otherwise resolve to a directory outside the cache root.
-var unsafeCacheChars = regexp.MustCompile(`[^A-Za-z0-9_-]`)
+var safeCacheChars = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // NewDiskFallbackConnector creates a new Connector that uses disk cache as fallback when the underlying connector fails.
 func NewDiskFallbackConnector(connector Connector) Connector {
@@ -76,8 +82,8 @@ func fetchWithFallback[T ~string](
 ) (T, error) {
 	content, err := fetch()
 	if err != nil {
-		if cached, cacheErr := read(key, kind); cacheErr == nil && len(cached) > 0 {
-			glog.V(2).Infof("teamvault %s fetch for key %v failed, using cache", kind, key)
+		if cached, cacheErr := read(ctx, key, kind); cacheErr == nil && len(cached) > 0 {
+			glog.V(4).Infof("teamvault %s fetch for key %v failed, using cache", kind, key)
 			return T(cached), nil
 		}
 		return "", err
@@ -88,43 +94,58 @@ func fetchWithFallback[T ~string](
 	return content, nil
 }
 
-func cachefile(key Key, kind string) string {
-	return filepath.Join(cachedir(key), kind)
+// cacheRoot returns the disk-fallback cache root below the home directory.
+func cacheRoot() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", ErrCacheUnavailable
+	}
+	return filepath.Join(home, ".teamvault-cache"), nil
 }
 
-func cachedir(key Key) string {
-	return filepath.Join(os.Getenv("HOME"), ".teamvault-cache", cacheSegment(key))
-}
-
-// cacheSegment maps a key onto one directory name below the cache root. Keys
-// are hashids, so an ordinary key passes through unchanged and existing caches
-// keep working; a key carrying path separators, "." or ".." is replaced and
-// disambiguated with a short hash of the original so two such keys cannot
-// collide on one directory.
+// cacheSegment maps a key onto one directory name below the cache root. An
+// ordinary hashid key passes through unchanged, so existing caches keep
+// working. Every other key is hex-encoded behind a "=" prefix: no pass-through
+// key can contain "=", so the two branches cannot collide, and hex is
+// reversible, so distinct keys stay distinct.
 func cacheSegment(key Key) string {
 	raw := key.String()
-	segment := unsafeCacheChars.ReplaceAllString(raw, "_")
-	if segment == raw && segment != "" && segment != "." && segment != ".." {
-		return segment
+	if safeCacheChars.MatchString(raw) && raw != "." && raw != ".." {
+		return raw
 	}
-	sum := sha256.Sum256([]byte(raw))
-	return fmt.Sprintf("%s-%x", segment, sum[:4])
+	return "=" + hex.EncodeToString([]byte(raw))
 }
 
-func read(key Key, kind string) ([]byte, error) {
-	return os.ReadFile(cachefile(key, kind))
+func cachefile(key Key, kind string) (string, error) {
+	root, err := cacheRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, cacheSegment(key), kind), nil
+}
+
+func read(ctx context.Context, key Key, kind string) ([]byte, error) {
+	path, err := cachefile(key, kind)
+	if err != nil {
+		return nil, errors.Wrap(ctx, err, "cache file unavailable")
+	}
+	return os.ReadFile(path)
 }
 
 func write(ctx context.Context, key Key, kind string, content []byte) error {
-	err := os.MkdirAll(cachedir(key), 0700)
+	root, err := cacheRoot()
 	if err != nil {
+		return errors.Wrap(ctx, err, "cache file unavailable")
+	}
+	dir := filepath.Join(root, cacheSegment(key))
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return errors.Wrap(ctx, err, "mkdir failed")
 	}
-	// #nosec G703 -- the directory name is sanitized by cacheSegment, so the
-	// path cannot leave the cache root
+	// #nosec G703 -- the directory name is produced by cacheSegment and cannot
+	// leave the cache root
 	return errors.Wrap(
 		ctx,
-		os.WriteFile(cachefile(key, kind), content, 0600),
+		os.WriteFile(filepath.Join(dir, kind), content, 0600),
 		"write cache file failed",
 	)
 }

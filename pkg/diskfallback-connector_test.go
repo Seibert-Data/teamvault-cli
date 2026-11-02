@@ -109,5 +109,44 @@ var _ = Describe("DiskFallbackConnector", func() {
 			_, err = os.Stat(filepath.Join(home, ".teamvault-cache", entries[0].Name(), "password"))
 			Expect(err).NotTo(HaveOccurred())
 		})
+		It("does not collide with a key that looks like an escaped one", func() {
+			// The sanitized branch is hex behind "=", so no pass-through key can
+			// name the same directory as an escaped key.
+			_, err := connector.Password(ctx, key)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = connector.Password(ctx, teamvault.Key("a_b-1a2b3c4d"))
+			Expect(err).NotTo(HaveOccurred())
+			entries, err := os.ReadDir(filepath.Join(home, ".teamvault-cache"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(entries).To(HaveLen(2))
+		})
+		It("maps the same key to the same directory every time", func() {
+			_, err := connector.Password(ctx, key)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = connector.Password(ctx, key)
+			Expect(err).NotTo(HaveOccurred())
+			entries, err := os.ReadDir(filepath.Join(home, ".teamvault-cache"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(entries).To(HaveLen(1))
+		})
+	})
+
+	Context("home directory unknown", func() {
+		BeforeEach(func() {
+			GinkgoT().Setenv("HOME", "")
+			fakeConnector.PasswordReturns("secret", nil)
+		})
+		It("does not write a cache file relative to the working directory", func() {
+			result, err := connector.Password(ctx, key)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(teamvault.Password("secret")))
+			_, statErr := os.Stat(".teamvault-cache")
+			Expect(os.IsNotExist(statErr)).To(BeTrue())
+		})
+		It("reports an error instead of an empty value when the fetch fails", func() {
+			fakeConnector.PasswordReturns("", errors.New("offline"))
+			_, err := connector.Password(ctx, key)
+			Expect(err).To(HaveOccurred())
+		})
 	})
 })

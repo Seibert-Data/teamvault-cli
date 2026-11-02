@@ -541,4 +541,10 @@ var _ = Describe("RemoteConnector key escaping", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(escapedPath).To(Equal("/api/secrets/a%2Fb/"))
 	})
+
+	It("encodes a dot-only key so it cannot become a directory step", func() {
+		_, err := connector.User(ctx, teamvault.Key(".."))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(escapedPath).To(Equal("/api/secrets/%2E%2E/"))
+	})
 })
