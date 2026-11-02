@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v5.11.2
 
 - fix(security): escape the secret key as one URL path segment on the read, write and share paths, through one shared `secretPath` helper (`pkg/secret-url.go`) so the three cannot drift apart again. A key is caller-supplied (a template expression or a CLI argument), so a key carrying `?`, `#` or `/` addressed a different resource on the configured host while the request still carried the Basic-auth credentials. Dots are encoded too (`%2E`): `url.PathEscape` leaves them alone, and a segment of `..` would otherwise be resolved as a directory step, turning `/api/secrets/../` into `/api/`.
 - fix(security): keep the disk-fallback cache inside `~/.teamvault-cache`. The key went into the cache path unescaped, so a key such as `../../.ssh` resolved outside the cache root and the fetched secret was written there with `0600`. An ordinary hashid key still names its directory unchanged, so existing caches keep working; every other key is hex-encoded behind a `=` prefix, which no pass-through key can contain and which is reversible, so the mapping is injective and two keys can never share a cache directory. An unknown home directory now fails closed instead of resolving the cache relative to the working directory.
