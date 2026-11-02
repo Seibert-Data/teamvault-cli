@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 
@@ -467,3 +468,59 @@ func getMap(m map[string]any, key string) map[string]any {
 	}
 	return v
 }
+
+var _ = Describe("RemoteWriter key escaping", func() {
+	var ctx context.Context
+	var writer teamvault.Writer
+	var escapedPath string
+	var rawQuery string
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		escapedPath = ""
+		rawQuery = ""
+	})
+
+	JustBeforeEach(func() {
+		server := httptest.NewServer(
+			http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+				escapedPath = req.URL.EscapedPath()
+				rawQuery = req.URL.RawQuery
+				resp.Header().Set("Content-Type", "application/json")
+				//nolint:errcheck
+				fmt.Fprint(resp, `{"api_url":"https://example.com/api/secrets/x/"}`)
+			}),
+		)
+		DeferCleanup(server.Close)
+		writer = teamvault.NewRemoteWriter(
+			libhttp.CreateDefaultHttpClient(),
+			teamvault.Url(server.URL),
+			teamvault.User("user"),
+			teamvault.Password("pass"),
+			libtime.NewCurrentDateTime(),
+		)
+	})
+
+	It("keeps a query delimiter inside the path", func() {
+		desc := "updated"
+		_, _, err := writer.Update(
+			ctx,
+			teamvault.Key("weird?key#frag"),
+			teamvault.UpdateSecret{Description: &desc},
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(escapedPath).To(Equal("/api/secrets/weird%3Fkey%23frag/"))
+		Expect(rawQuery).To(BeEmpty())
+	})
+
+	It("keeps a slash inside one path segment", func() {
+		desc := "updated"
+		_, _, err := writer.Update(
+			ctx,
+			teamvault.Key("a/b"),
+			teamvault.UpdateSecret{Description: &desc},
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(escapedPath).To(Equal("/api/secrets/a%2Fb/"))
+	})
+})

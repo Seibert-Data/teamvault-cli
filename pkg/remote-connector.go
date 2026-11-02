@@ -123,6 +123,16 @@ type remoteConnector struct {
 	currentDateTime time.CurrentDateTime
 }
 
+// secretURL builds the URL of one secret on the configured TeamVault host.
+// The key is escaped as a single path segment: it is supplied by the caller
+// (a template expression or a CLI argument), so an unescaped key carrying
+// "?", "#" or "/" would address a different resource on the same host while
+// the request still carries the Basic-auth credentials. The host itself comes
+// from the configuration and is never taken from the key.
+func (r *remoteConnector) secretURL(key Key) string {
+	return fmt.Sprintf("%s/api/secrets/%s/", r.url.String(), url.PathEscape(key.String()))
+}
+
 func (r *remoteConnector) Password(ctx context.Context, key Key) (Password, error) {
 	currentRevision, err := r.CurrentRevision(ctx, key)
 	if err != nil {
@@ -141,7 +151,7 @@ func (r *remoteConnector) User(ctx context.Context, key Key) (User, error) {
 	var response struct {
 		User User `json:"username"`
 	}
-	if err := r.call(ctx, fmt.Sprintf("%s/api/secrets/%s/", r.url.String(), key.String()), nil, &response, r.createHeader()); err != nil {
+	if err := r.call(ctx, r.secretURL(key), nil, &response, r.createHeader()); err != nil {
 		return "", err
 	}
 	return response.User, nil
@@ -151,7 +161,7 @@ func (r *remoteConnector) Url(ctx context.Context, key Key) (Url, error) {
 	var response struct {
 		Url Url `json:"url"`
 	}
-	if err := r.call(ctx, fmt.Sprintf("%s/api/secrets/%s/", r.url.String(), key.String()), nil, &response, r.createHeader()); err != nil {
+	if err := r.call(ctx, r.secretURL(key), nil, &response, r.createHeader()); err != nil {
 		return "", err
 	}
 	return response.Url, nil
@@ -161,7 +171,7 @@ func (r *remoteConnector) CurrentRevision(ctx context.Context, key Key) (Current
 	var response struct {
 		CurrentRevision CurrentRevision `json:"current_revision"`
 	}
-	if err := r.call(ctx, fmt.Sprintf("%s/api/secrets/%s/", r.url.String(), key.String()), nil, &response, r.createHeader()); err != nil {
+	if err := r.call(ctx, r.secretURL(key), nil, &response, r.createHeader()); err != nil {
 		return "", err
 	}
 	return response.CurrentRevision, nil
@@ -315,7 +325,7 @@ func (r *remoteConnector) call(
 	}
 	resp, err := r.httpClient.Do(
 		req,
-	) // #nosec G704 -- URLs are constructed from configured base URL and API paths, not user input
+	) // #nosec G704 -- the host comes from the configuration; the secret key is url.PathEscape'd into one path segment
 	if err != nil {
 		glog.V(2).Infof("execute request failed: %v", err)
 		return errors.Wrapf(ctx, err, "execute request failed")

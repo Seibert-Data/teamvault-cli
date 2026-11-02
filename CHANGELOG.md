@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- fix(security): escape the secret key as one URL path segment on the read (`pkg/remote-connector.go`) and write (`pkg/remote-writer.go`) paths, as the share path already did. A key is caller-supplied (a template expression or a CLI argument), so a key carrying `?`, `#` or `/` addressed a different resource on the configured host while the request still carried the Basic-auth credentials.
+- fix(security): keep the disk-fallback cache inside `~/.teamvault-cache`. The key went into the cache path unescaped, so a key such as `../../.ssh` resolved outside the cache root and the fetched secret was written there with `0600`. The directory name is now sanitized to `[A-Za-z0-9_-]` and disambiguated with a short hash when it had to change; an ordinary hashid key is unchanged, so existing caches keep working.
+- fix: the disk fallback no longer poisons its own cache. A failed fetch used to write the zero value of the failed read, leaving an empty file behind, so the next offline call returned an empty value with a `nil` error — a silently blank credential in a rendered config. The cache is written only from a successful read now, and a cached empty value counts as a miss.
+
 ## v5.11.1
 
 - chore: bump the `go` directive to 1.27.3, the current stable toolchain. No source change — the module already builds and tests clean on 1.27.3.

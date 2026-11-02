@@ -489,3 +489,56 @@ var _ = Describe("RemoteConnector", func() {
 		})
 	})
 })
+
+var _ = Describe("RemoteConnector key escaping", func() {
+	var ctx context.Context
+	var connector teamvault.Connector
+	var escapedPath string
+	var rawQuery string
+	var fragment string
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		escapedPath = ""
+		rawQuery = ""
+		fragment = ""
+	})
+
+	JustBeforeEach(func() {
+		server := httptest.NewServer(
+			http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+				escapedPath = req.URL.EscapedPath()
+				rawQuery = req.URL.RawQuery
+				fragment = req.URL.Fragment
+				resp.Header().Set("Content-Type", "application/json")
+				//nolint:errcheck
+				fmt.Fprint(
+					resp,
+					`{"username":"user","url":"https://example.com","current_revision":"rev1"}`,
+				)
+			}),
+		)
+		DeferCleanup(server.Close)
+		connector = teamvault.NewRemoteConnector(
+			libhttp.CreateDefaultHttpClient(),
+			teamvault.Url(server.URL),
+			teamvault.User("user"),
+			teamvault.Password("pass"),
+			libtime.NewCurrentDateTime(),
+		)
+	})
+
+	It("keeps a query delimiter inside the path", func() {
+		_, err := connector.User(ctx, teamvault.Key("weird?key#frag"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(escapedPath).To(Equal("/api/secrets/weird%3Fkey%23frag/"))
+		Expect(rawQuery).To(BeEmpty())
+		Expect(fragment).To(BeEmpty())
+	})
+
+	It("keeps a slash inside one path segment", func() {
+		_, err := connector.User(ctx, teamvault.Key("a/b"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(escapedPath).To(Equal("/api/secrets/a%2Fb/"))
+	})
+})

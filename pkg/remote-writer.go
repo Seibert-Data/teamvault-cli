@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/bborbe/errors"
@@ -132,7 +133,7 @@ func (w *remoteWriter) Update(
 	var response struct {
 		ApiUrl ApiUrl `json:"api_url"`
 	}
-	if err := w.call(ctx, http.MethodPatch, fmt.Sprintf("%s/api/secrets/%s/", w.url.String(), key.String()), body, &response); err != nil {
+	if err := w.call(ctx, http.MethodPatch, w.secretURL(key), body, &response); err != nil {
 		return "", "", err
 	}
 	return key, response.ApiUrl, nil
@@ -146,6 +147,14 @@ func (w *remoteWriter) GeneratePassword(ctx context.Context) (Password, error) {
 		return "", err
 	}
 	return response.Password, nil
+}
+
+// secretURL builds the URL of one secret on the configured TeamVault host.
+// The key is escaped as a single path segment, so a key carrying "?", "#" or
+// "/" cannot address a different resource on the same host while the request
+// still carries the Basic-auth credentials.
+func (w *remoteWriter) secretURL(key Key) string {
+	return fmt.Sprintf("%s/api/secrets/%s/", w.url.String(), url.PathEscape(key.String()))
 }
 
 func (w *remoteWriter) call(ctx context.Context, method, url string, body any, response any) error {
