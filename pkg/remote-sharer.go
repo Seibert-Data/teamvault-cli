@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -111,7 +110,7 @@ func (s *remoteSharer) Share(
 	status, detail, err := s.call(
 		ctx,
 		http.MethodPost,
-		fmt.Sprintf("%s/api/secrets/%s/shares/", s.url.String(), url.PathEscape(key.String())),
+		s.url.String()+secretPath(key)+"shares/",
 		body,
 		&share,
 	)
@@ -162,11 +161,7 @@ func (s *remoteSharer) Shares(ctx context.Context, key Key) ([]Share, error) {
 	if err != nil {
 		return nil, errors.Wrapf(ctx, err, "parse base url failed")
 	}
-	nextURL := fmt.Sprintf(
-		"%s/api/secrets/%s/shares/",
-		s.url.String(),
-		url.PathEscape(key.String()),
-	)
+	nextURL := s.url.String() + secretPath(key) + "shares/"
 
 	var result []Share
 	// pendingNext is non-empty when the loop stopped while the server still offered
@@ -295,7 +290,7 @@ func (s *remoteSharer) call(
 
 	resp, err := s.httpClient.Do(
 		req,
-	) // #nosec G704 -- the HOST is config-fixed (SSRF is not in play); the secret key IS user-supplied and is url.PathEscape'd before it reaches the path
+	) // #nosec G704 -- the host comes from the configuration; the caller-supplied secret key is escaped into one path segment by secretPath
 	if err != nil {
 		return 0, "", errors.Wrapf(ctx, err, "execute request failed")
 	}

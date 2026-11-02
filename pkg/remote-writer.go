@@ -132,7 +132,7 @@ func (w *remoteWriter) Update(
 	var response struct {
 		ApiUrl ApiUrl `json:"api_url"`
 	}
-	if err := w.call(ctx, http.MethodPatch, fmt.Sprintf("%s/api/secrets/%s/", w.url.String(), key.String()), body, &response); err != nil {
+	if err := w.call(ctx, http.MethodPatch, w.url.String()+secretPath(key), body, &response); err != nil {
 		return "", "", err
 	}
 	return key, response.ApiUrl, nil
@@ -176,7 +176,7 @@ func (w *remoteWriter) call(ctx context.Context, method, url string, body any, r
 
 	resp, err := w.httpClient.Do(
 		req,
-	) // #nosec G704 -- URLs are constructed from configured base URL and API paths, not user input
+	) // #nosec G704 -- the host comes from the configuration; the secret key is escaped into one path segment by secretPath
 	if err != nil {
 		return errors.Wrapf(ctx, err, "execute request failed")
 	}
