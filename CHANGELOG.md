@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v5.11.1
 
 - chore: bump the `go` directive to 1.27.3, the current stable toolchain. No source change — the module already builds and tests clean on 1.27.3.
 
