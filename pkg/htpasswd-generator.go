@@ -73,5 +73,19 @@ func htpasswdUsername(ctx context.Context, key Key, raw string) (string, error) 
 			key,
 		)
 	}
+	// Surrounding whitespace is refused rather than trimmed. Apache's
+	// ap_getword skips leading whitespace when it reads a user:hash line, so a
+	// stored "\nadmin" (OneLine turns the newline into a space) would otherwise
+	// authenticate as the legitimate "admin" — and trimming it would render
+	// exactly that entry. Neither is acceptable, so the key fails loudly and the
+	// operator fixes the stored value.
+	if trimmed := strings.TrimSpace(sanitized); trimmed != sanitized {
+		return "", errors.Errorf(
+			ctx,
+			"secret %q has a username with leading or trailing whitespace — Apache ignores it, so the entry would authenticate as %q; fix the username in the TeamVault UI before rendering htpasswd",
+			key,
+			trimmed,
+		)
+	}
 	return sanitized, nil
 }

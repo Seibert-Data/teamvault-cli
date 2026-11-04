@@ -6,6 +6,7 @@ package cli
 
 import (
 	"context"
+	"strings"
 
 	"github.com/bborbe/errors"
 )
@@ -20,6 +21,17 @@ import (
 // that is already stored cannot be fixed from here; this check exists so no new
 // poisoned value enters TeamVault through the CLI.
 func validateUsername(ctx context.Context, username string) error {
+	// Surrounding whitespace is refused because Apache skips it when parsing a
+	// user:hash line: a stored " admin" authenticates as "admin", so the value
+	// the operator typed is not the principal that gets rendered. An empty
+	// username is left alone — create treats it as absent and update as a clear.
+	if trimmed := strings.TrimSpace(username); trimmed != username {
+		return errors.Errorf(
+			ctx,
+			"--username must not start or end with whitespace (it would be stored as %q)",
+			trimmed,
+		)
+	}
 	for _, r := range username {
 		switch {
 		case r == ':':

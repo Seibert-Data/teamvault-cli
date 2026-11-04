@@ -106,6 +106,29 @@ var _ = Describe("HtpasswdGenerator", func() {
 		})
 	})
 
+	// Apache's ap_getword skips leading whitespace when it reads a user:hash
+	// line, so a stored "\nadmin" collapses to " admin" and would authenticate
+	// as the legitimate "admin". Trimming would render exactly that entry, so
+	// the render refuses instead.
+	Context("with a username carrying leading whitespace", func() {
+		BeforeEach(func() { key = teamvault.Key("\nadmin") })
+		It("returns an error naming the whitespace", func() {
+			Expect(err).NotTo(BeNil())
+			Expect(err.Error()).To(ContainSubstring("leading or trailing whitespace"))
+		})
+		It("renders nothing", func() {
+			Expect(content).To(BeNil())
+		})
+	})
+
+	Context("with a username carrying a trailing space", func() {
+		BeforeEach(func() { key = teamvault.Key("admin ") })
+		It("returns an error", func() {
+			Expect(err).NotTo(BeNil())
+			Expect(err.Error()).To(ContainSubstring("leading or trailing whitespace"))
+		})
+	})
+
 	Context("with an empty username", func() {
 		BeforeEach(func() { key = teamvault.Key("") })
 		It("returns an error rather than a file Apache would reject", func() {

@@ -122,6 +122,12 @@ assert_contains "htpasswd strips the colon from the principal" "evilgarbage:" "$
 # makes Apache reject the whole file, which would break every credential in it.
 assert_exit_nonzero "htpasswd of a blank username fails" "$TV" htpasswd --teamvault-key blank-user
 
+# Apache skips leading whitespace when it parses a user:hash line, so a stored
+# "\nadmin" would authenticate as the legitimate "admin" — the render refuses
+# rather than emitting that entry.
+assert_exit_nonzero "htpasswd of a leading-whitespace username fails" \
+	"$TV" htpasswd --teamvault-key leading-nl-user
+
 # --- The --help leak and the environment password path ----------------------
 #
 # A flag default is printed by --help, so TEAMVAULT_PASS must not be one.

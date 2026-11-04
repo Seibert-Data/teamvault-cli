@@ -85,6 +85,12 @@ func newStore() *store {
 				Username:    "evil:garbage",
 				Password:    "colon-pass",
 			},
+			"leading-nl-user": {
+				ContentType: "password",
+				Name:        "leading-nl-user",
+				Username:    "\nadmin",
+				Password:    "leading-pass",
+			},
 		},
 	}
 }

@@ -40,6 +40,11 @@ var _ = Describe("username validation", func() {
 		Entry("carriage return", "a\rb", `'\r'`),
 		Entry("tab", "a\tb", `'\t'`),
 		Entry("colon", "a:b", "field separator"),
+		// Apache skips surrounding whitespace, so a stored " admin" would
+		// authenticate as "admin".
+		Entry("leading space", " admin", "whitespace"),
+		Entry("trailing space", "admin ", "whitespace"),
+		Entry("whitespace only", "   ", "whitespace"),
 	)
 
 	DescribeTable(
@@ -52,8 +57,10 @@ var _ = Describe("username validation", func() {
 			Expect(err.Error()).To(ContainSubstring(expectedFragment))
 		},
 		Entry("newline", "a\nb", `'\n'`),
+		Entry("carriage return", "a\rb", `'\r'`),
 		Entry("tab", "a\tb", `'\t'`),
 		Entry("colon", "a:b", "field separator"),
+		Entry("leading space", " admin", "whitespace"),
 	)
 
 	It("lets a plain username past validation", func() {
@@ -61,9 +68,8 @@ var _ = Describe("username validation", func() {
 		rootCmd.SetArgs([]string{
 			"create", "--name", "probe", "--username", "alice", "--generate",
 		})
-		// Without a reachable server this still fails — but not on the username.
-		if err := rootCmd.Execute(); err != nil {
-			Expect(err.Error()).NotTo(ContainSubstring("must not contain"))
-		}
+		// Without a reachable server this still fails — but never on the username.
+		err := rootCmd.Execute()
+		Expect(err).To(Or(BeNil(), MatchError(Not(ContainSubstring("must not")))))
 	})
 })
