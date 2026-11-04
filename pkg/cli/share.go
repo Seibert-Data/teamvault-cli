@@ -129,10 +129,10 @@ func shareOne(
 				"%s refused (%d: %s)",
 				key,
 				shareErr.StatusCode,
-				oneLine(shareErr.Detail),
+				teamvault.OneLine(shareErr.Detail),
 			), err
 		}
-		return fmt.Sprintf("%s refused (error: %s)", key, oneLine(err.Error())), err
+		return fmt.Sprintf("%s refused (error: %s)", key, teamvault.OneLine(err.Error())), err
 	}
 	if result.Outcome == teamvault.ShareAlreadyExists {
 		// A duplicate is the outcome the caller asked for: the access exists, so a
@@ -140,21 +140,6 @@ func shareOne(
 		return fmt.Sprintf("%s already-shared", key), nil
 	}
 	return fmt.Sprintf("%s shared", key), nil
-}
-
-// oneLine collapses a server-supplied message onto a single line: each result is
-// one line by contract, and a body carrying CR/LF or other control characters
-// would otherwise break the per-key output (and the parsing that reads it).
-func oneLine(value string) string {
-	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\r' || r == '\t' {
-			return ' '
-		}
-		if r < 0x20 || r == 0x7f {
-			return -1
-		}
-		return r
-	}, value)
 }
 
 // collectShareKeys merges positional keys, repeated --teamvault-key values and,

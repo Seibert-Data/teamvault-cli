@@ -105,4 +105,50 @@ HTP_NEW="$("$TV" htpasswd --teamvault-key "$HTP_KEY")"
 assert_contains "htpasswd of a created secret carries its username" "reg-user:" "$HTP_NEW"
 assert_contains "htpasswd of a created secret is bcrypt"            '$2'        "$HTP_NEW"
 
+# Poisoned stored usernames (seeded fixtures — a seed bypasses the write-side
+# check, which is the only way such a value can exist). A username carrying a
+# newline must collapse onto ONE line instead of injecting a second principal.
+HTP_NL="$("$TV" htpasswd --teamvault-key newline-user)"
+assert_eq "htpasswd of a newline username is a single line" "1" \
+	"$(printf '%s\n' "$HTP_NL" | wc -l | tr -d ' ')"
+assert_contains "htpasswd collapses the newline into a space" "admin attacker:" "$HTP_NL"
+
+# A colon is the htpasswd field separator, so it is stripped rather than
+# corrupting the principal Apache reads.
+HTP_COLON="$("$TV" htpasswd --teamvault-key colon-user)"
+assert_contains "htpasswd strips the colon from the principal" "evilgarbage:" "$HTP_COLON"
+
+# A username with no printable characters must fail loudly: a blank username
+# makes Apache reject the whole file, which would break every credential in it.
+assert_exit_nonzero "htpasswd of a blank username fails" "$TV" htpasswd --teamvault-key blank-user
+
+# Apache skips leading whitespace when it parses a user:hash line, so a stored
+# "\nadmin" would authenticate as the legitimate "admin" — the render refuses
+# rather than emitting that entry.
+assert_exit_nonzero "htpasswd of a leading-whitespace username fails" \
+	"$TV" htpasswd --teamvault-key leading-nl-user
+
+# --- The --help leak and the environment password path ----------------------
+#
+# A flag default is printed by --help, so TEAMVAULT_PASS must not be one.
+HELP_OUT="$(TEAMVAULT_PASS=secret-sentinel "$TV" --help 2>&1)"
+case "$HELP_OUT" in
+	*secret-sentinel*) echo "  FAIL: --help leaked TEAMVAULT_PASS"; _FAIL=1 ;;
+	*) echo "  ok: --help does not leak TEAMVAULT_PASS" ;;
+esac
+
+# The env path still has to work. The fakevault config supplies the password and
+# would mask the env var entirely (factory overwrites from the config file), so
+# this removes the config and pairs a positive run against a negative one —
+# without the control it would pass even if TEAMVAULT_PASS support were deleted.
+ENV_ON="$(TEAMVAULT_PASS=test "$TV" --teamvault-config /nonexistent.json \
+	--teamvault-url "$FV_URL" --teamvault-user test password demo 2>/dev/null)"
+assert_eq "env password authenticates without a config file" "demo-pass-123" "$ENV_ON"
+
+ENV_OFF_RC=0
+TEAMVAULT_PASS= "$TV" --teamvault-config /nonexistent.json \
+	--teamvault-url "$FV_URL" --teamvault-user test password demo >/dev/null 2>&1 || ENV_OFF_RC=$?
+assert_eq "no password source fails" "nonzero" \
+	"$([ "$ENV_OFF_RC" -ne 0 ] && echo nonzero || echo zero)"
+
 scenario_done

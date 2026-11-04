@@ -51,12 +51,6 @@ var _ = Describe("CLI", func() {
 			),
 			Entry("TEAMVAULT_USER -> teamvault-user", "TEAMVAULT_USER", "teamvault-user", "admin"),
 			Entry(
-				"TEAMVAULT_PASS -> teamvault-pass",
-				"TEAMVAULT_PASS",
-				"teamvault-pass",
-				"secretpass",
-			),
-			Entry(
 				"TEAMVAULT_CONFIG -> teamvault-config",
 				"TEAMVAULT_CONFIG",
 				"teamvault-config",

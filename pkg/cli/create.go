@@ -49,6 +49,10 @@ func createCreateCommand(ctx context.Context, sf *SharedFlags) *cobra.Command {
 				)
 			}
 
+			if err := validateUsername(ctx, username); err != nil {
+				return err
+			}
+
 			// Infer content type
 			var contentType teamvault.ContentType
 			if filePath != "" {
