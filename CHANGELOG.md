@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v5.11.3
 
 - fix(security): strip control characters and `:` from the htpasswd username before rendering, and fail with an error naming the key when nothing printable remains. A user able to change only a secret's username could otherwise emit a second `<user>:<hash>` line into a generated Apache basic-auth file and authenticate as an arbitrary principal — `mod_authn_file` is first-match-wins and the injected line precedes the legitimate one. A blank username is refused rather than rendered, because Apache rejects the entire file when the username is empty; a username with leading or trailing whitespace is refused too, because Apache skips that whitespace when parsing a `user:hash` line — a stored `"\nadmin"` would otherwise authenticate as the legitimate `admin`, and trimming it would render exactly that entry.
 - fix(security): refuse a `--username` containing CR, LF, other control characters, `:` or surrounding whitespace in `create` and `update`, naming the offending character, so a poisoned username cannot enter TeamVault through the CLI.
