@@ -64,6 +64,27 @@ func newStore() *store {
 				Password:    "s3cr3t-value",
 				File:        "certificate-bytes",
 			},
+			// Poisoned-username fixtures for the htpasswd render path. A seed
+			// bypasses CLI validation, so these stay readable even after the
+			// write-side check rejects such usernames.
+			"newline-user": {
+				ContentType: "password",
+				Name:        "newline-user",
+				Username:    "admin\nattacker",
+				Password:    "newline-pass",
+			},
+			"blank-user": {
+				ContentType: "password",
+				Name:        "blank-user",
+				Username:    "\n\n",
+				Password:    "blank-pass",
+			},
+			"colon-user": {
+				ContentType: "password",
+				Name:        "colon-user",
+				Username:    "evil:garbage",
+				Password:    "colon-pass",
+			},
 		},
 	}
 }

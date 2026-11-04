@@ -48,6 +48,12 @@ func createUpdateCommand(ctx context.Context, sf *SharedFlags) *cobra.Command {
 				)
 			}
 
+			if cmd.Flags().Changed("username") {
+				if err := validateUsername(ctx, username); err != nil {
+					return err
+				}
+			}
+
 			// Build UpdateSecret — only set fields that were actually passed
 			var secret teamvault.UpdateSecret
 			if cmd.Flags().Changed("name") {

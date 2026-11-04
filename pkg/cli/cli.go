@@ -138,12 +138,23 @@ func NewRootCommand(ctx context.Context) *cobra.Command {
 		Version:       resolveVersion(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// The password flag must not default to the environment value: a flag
+		// default is printed by --help, which would leak TEAMVAULT_PASS into
+		// terminal scrollback, CI logs and pasted bug reports. The environment is
+		// resolved here instead — after cobra has parsed the flags, and only when
+		// the flag itself was not given, so the env path still works.
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("teamvault-pass") {
+				sf.pass = os.Getenv("TEAMVAULT_PASS")
+			}
+			return nil
+		},
 	}
 
 	pf := rootCmd.PersistentFlags()
 	pf.StringVar(&sf.url, "teamvault-url", os.Getenv("TEAMVAULT_URL"), "teamvault url")
 	pf.StringVar(&sf.user, "teamvault-user", os.Getenv("TEAMVAULT_USER"), "teamvault user")
-	pf.StringVar(&sf.pass, "teamvault-pass", os.Getenv("TEAMVAULT_PASS"), "teamvault password")
+	pf.StringVar(&sf.pass, "teamvault-pass", "", "teamvault password")
 	pf.StringVar(
 		&sf.configPath,
 		"teamvault-config",

@@ -111,15 +111,15 @@ func writeShares(
 			w,
 			"%s\t%s\t%s\t%s\t%s\t%s\n",
 			key,
-			// Every server-supplied cell goes through oneLine: a grant description
+			// Every server-supplied cell goes through OneLine: a grant description
 			// is settable by any account with share permission, and an embedded
 			// newline would break the column alignment and could forge a row in
 			// output a script parses. (JSON output is already escaped.)
-			oneLine(derefOrDash(share.User)),
-			oneLine(derefOrDash(share.Group)),
-			oneLine(share.GrantDescription),
-			oneLine(derefOrDash(share.GrantedBy)),
-			oneLine(derefOrDash(share.GrantedUntil)),
+			teamvault.OneLine(derefOrDash(share.User)),
+			teamvault.OneLine(derefOrDash(share.Group)),
+			teamvault.OneLine(share.GrantDescription),
+			teamvault.OneLine(derefOrDash(share.GrantedBy)),
+			teamvault.OneLine(derefOrDash(share.GrantedUntil)),
 		); err != nil {
 			return errors.Wrapf(ctx, err, "write shares failed")
 		}
