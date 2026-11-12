@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - chore: migrate the Homebrew cask quarantine hook from the deprecated `install` stanza to `install_steps` (goreleaser#6873) and bump the goreleaser action pin to v2.20.1 so the new key is accepted
+- chore: bump the Go directive to 1.27.4 so `govulncheck` stops failing on GO-2026-6859 (a stdlib `net/http` `MaxBytesReader` header race fixed in 1.27.4). Unrelated to the cask change, but every PR on this repo is red without it.
 
 ## v5.11.3
 
