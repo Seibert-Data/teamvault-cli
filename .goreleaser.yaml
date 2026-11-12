@@ -44,6 +44,10 @@ homebrew_casks:
       email: goreleaser@seibert.group
     # The binary is unsigned; strip the download quarantine so it runs without a
     # Gatekeeper "unidentified developer" prompt on first use.
+    # `must_succeed: false` is load-bearing: `xattr -d` exits 1 when the attribute
+    # is already absent, and the install-steps `run` helper defaults to
+    # must_succeed: true — without it, a binary with nothing to strip aborts the
+    # whole install. Do not "correct" it to true.
     hooks:
       post:
         install_steps: |
