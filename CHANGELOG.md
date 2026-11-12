@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- chore: migrate the Homebrew cask quarantine hook from the deprecated `install` stanza to `install_steps` (goreleaser#6873) and bump the goreleaser action pin to v2.20.1 so the new key is accepted
+
 ## v5.11.3
 
 - fix(security): strip control characters and `:` from the htpasswd username before rendering, and fail with an error naming the key when nothing printable remains. A user able to change only a secret's username could otherwise emit a second `<user>:<hash>` line into a generated Apache basic-auth file and authenticate as an arbitrary principal — `mod_authn_file` is first-match-wins and the injected line precedes the legitimate one. A blank username is refused rather than rendered, because Apache rejects the entire file when the username is empty; a username with leading or trailing whitespace is refused too, because Apache skips that whitespace when parsing a `user:hash` line — a stored `"\nadmin"` would otherwise authenticate as the legitimate `admin`, and trimming it would render exactly that entry.
