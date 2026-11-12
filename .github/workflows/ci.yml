@@ -87,11 +87,11 @@ jobs:
       - name: Validate GoReleaser config
         uses: goreleaser/goreleaser-action@v6
         with:
-          version: 'v2.17.0'
+          version: 'v2.20.1'
           args: check
 
       - name: Snapshot build (no publish)
         uses: goreleaser/goreleaser-action@v6
         with:
-          version: 'v2.17.0'
+          version: 'v2.20.1'
           args: build --snapshot --clean

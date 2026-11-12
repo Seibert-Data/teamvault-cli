@@ -44,7 +44,13 @@ homebrew_casks:
       email: goreleaser@seibert.group
     # The binary is unsigned; strip the download quarantine so it runs without a
     # Gatekeeper "unidentified developer" prompt on first use.
+    # `must_succeed: false` is load-bearing: `xattr -d` exits 1 when the attribute
+    # is already absent, and the install-steps `run` helper defaults to
+    # must_succeed: true — without it, a binary with nothing to strip aborts the
+    # whole install. Do not "correct" it to true.
     hooks:
       post:
-        install: |
-          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/teamvault-cli"]
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/teamvault-cli"], must_succeed: false
+          end
