@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v5.11.4
 
 - chore: migrate the Homebrew cask quarantine hook from the deprecated `install` stanza to `install_steps` (goreleaser#6873) and bump the goreleaser action pin to v2.20.1 so the new key is accepted
 - fix: the migrated cask hook no longer fails the install when the downloaded binary carries no `com.apple.quarantine` attribute. `xattr -d` exits 1 when there is nothing to strip, and `run` defaults to `must_succeed: true` — the old non-raising `system_command` did not abort, so the behaviour is preserved with `must_succeed: false`.
